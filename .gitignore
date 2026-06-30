@@ -7,4 +7,6 @@ venv/
 config.json
 dist/
 build/
+*.spec
+!build_win.spec
 *.spec.bak
