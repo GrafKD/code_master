@@ -1,27 +1,58 @@
-name: Build Windows exe
+name: Build and Release
 
 on:
   push:
     branches: [ main ]
+    tags: [ 'v*' ]
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
           pip install pyinstaller
+
       - name: Build with PyInstaller
         run: pyinstaller build_win.spec
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+
+      - name: Determine release tag and name
+        id: release_info
+        shell: bash
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            TAG_NAME="${GITHUB_REF#refs/tags/}"
+            RELEASE_NAME="Release $TAG_NAME"
+            PRERELEASE="false"
+          else
+            TAG_NAME="nightly-$(date +'%Y%m%d-%H%M%S')"
+            RELEASE_NAME="Nightly build $(date +'%Y-%m-%d %H:%M')"
+            PRERELEASE="true"
+          fi
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+          echo "release_name=$RELEASE_NAME" >> $GITHUB_OUTPUT
+          echo "prerelease=$PRERELEASE" >> $GITHUB_OUTPUT
+
+      - name: Create/Update Release and Upload Asset
+        uses: softprops/action-gh-release@v2
         with:
-          name: CodeMaster-portable
-          path: dist/*.exe
+          tag_name: ${{ steps.release_info.outputs.tag_name }}
+          name: ${{ steps.release_info.outputs.release_name }}
+          prerelease: ${{ steps.release_info.outputs.prerelease }}
+          files: dist/CodeMaster.exe
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
