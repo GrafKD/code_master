@@ -88,6 +88,14 @@ class Translator:
                 "Ошибка проверки обновлений": "Update check error",
                 "Логи": "Logs",
                 "Выход": "Exit",
+                "Настройки": "Settings",
+                "Поиск": "Search",
+                "Триггеры": "Triggers",
+                "Шлюз": "Gateway",
+                "Библиотека": "Library",
+                "Прошивка": "Firmware",
+                "Готов": "Ready",
+                "Индикатор подключения COM-порта": "COM port connection indicator",
             },
         }
 

@@ -238,6 +238,53 @@ QToolTip {
     border-radius: 6px;
     padding: 4px 8px;
 }
+QStatusBar {
+    background-color: $bg_panel;
+    color: $text_secondary;
+    border: none;
+    padding: 4px 12px;
+}
+QStatusBar::item {
+    border: none;
+}
+#topPanel {
+    background-color: $bg_panel;
+    border: none;
+}
+#menuPanel {
+    background-color: $bg_window;
+    border: none;
+}
+#menuButton {
+    background-color: $bg_card;
+    color: $text_secondary;
+    border: none;
+    border-radius: 8px;
+    padding: 6px 4px;
+    font-weight: 600;
+    text-align: center;
+}
+#menuButton:hover {
+    background-color: $bg_card_hover;
+    color: $text;
+}
+#menuButton:checked {
+    background-color: $bg_card_checked;
+    color: $accent;
+    border: 2px solid $accent;
+}
+#menuButton:checked:hover {
+    background-color: $bg_card_checked;
+}
+QSplitter::handle {
+    background-color: $border;
+}
+QSplitter::handle:horizontal {
+    width: 2px;
+}
+QSplitter::handle:vertical {
+    height: 2px;
+}
 """
 
 
@@ -269,16 +316,21 @@ def apply_dark_theme(app: QApplication) -> None:
     """Применяет современную тёмную тему."""
     _apply_theme(app, {
         "bg_window": "#1E1E2E",
+        "bg_panel": "#252538",
         "bg_widget": "#2B2B3C",
-        "bg_alternate": "#242436",
+        "bg_alternate": "#252538",
         "bg_button": "#3A3A5A",
         "bg_button_hover": "#4A4A6A",
         "bg_button_pressed": "#2A2A4A",
+        "bg_card": "#2C2C3E",
+        "bg_card_hover": "#3A3A5A",
+        "bg_card_checked": "#1E2A4A",
         "bg_disabled": "#2B2B3C",
         "bg_selected": "#4A4A6A",
         "accent": "#6C8CFF",
         "border": "#3A3A4A",
-        "text": "#E0E0E0",
+        "text": "#E0E0E8",
+        "text_secondary": "#A0A0B0",
         "text_selected": "#FFFFFF",
         "text_title": "#FFFFFF",
         "text_disabled": "#6C6C6C",
@@ -289,16 +341,21 @@ def apply_light_theme(app: QApplication) -> None:
     """Применяет светлую тему."""
     _apply_theme(app, {
         "bg_window": "#F5F5FA",
+        "bg_panel": "#E8E8F0",
         "bg_widget": "#FFFFFF",
         "bg_alternate": "#F0F0F5",
         "bg_button": "#E0E0EC",
         "bg_button_hover": "#D0D0E0",
         "bg_button_pressed": "#C0C0D0",
+        "bg_card": "#FFFFFF",
+        "bg_card_hover": "#E8E8F0",
+        "bg_card_checked": "#D0D8FF",
         "bg_disabled": "#E8E8F0",
         "bg_selected": "#D0D8FF",
         "accent": "#4A6CFF",
         "border": "#C0C0D0",
         "text": "#2B2B3C",
+        "text_secondary": "#6A6A7A",
         "text_selected": "#FFFFFF",
         "text_title": "#1E1E2E",
         "text_disabled": "#8A8A9A",
