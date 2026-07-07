@@ -11,6 +11,7 @@ from PySide6.QtGui import QAction, QColor, QFont
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
+    QComboBox,
     QFileDialog,
     QHBoxLayout,
     QLabel,
@@ -60,6 +61,7 @@ class CanChannelMonitor(QWidget):
         self._packet_times: deque[float] = deque()
         self._manual_send_ids: set[int] = set()
         self._last_packet_time: Optional[float] = None
+        self._send_history: List[Dict[str, object]] = []
 
         self._create_widgets()
         self._layout_widgets()
@@ -93,6 +95,12 @@ class CanChannelMonitor(QWidget):
         self._pause_check.setFont(QFont("Segoe UI", 9))
         self._pause_check.stateChanged.connect(self._on_pause_changed)
 
+        self._search_edit = QLineEdit()
+        self._search_edit.setFixedWidth(180)
+        self._search_edit.setFont(QFont("Segoe UI", 9))
+        self._search_edit.setPlaceholderText(tr("Поиск по ID или данным…"))
+        self._search_edit.textChanged.connect(self._apply_search)
+
         self._table = QTableWidget()
         self._table.setColumnCount(11)
         self._table.setHorizontalHeaderLabels(
@@ -123,6 +131,12 @@ class CanChannelMonitor(QWidget):
         self._send_button.setFixedSize(80, 28)
         self._send_button.setFont(QFont("Segoe UI", 9))
         self._send_button.clicked.connect(self._send_manual)
+
+        self._send_history_combo = QComboBox()
+        self._send_history_combo.setFixedWidth(160)
+        self._send_history_combo.setFont(QFont("Segoe UI", 9))
+        self._send_history_combo.activated.connect(self._on_history_activated)
+        self._rebuild_history_combo()
 
         self._cyclic_check = QCheckBox(tr("Циклически"))
         self._cyclic_check.setFont(QFont("Segoe UI", 9))
@@ -156,6 +170,8 @@ class CanChannelMonitor(QWidget):
         control_layout.addWidget(self._filter_edit)
         control_layout.addWidget(self._pause_check)
         control_layout.addStretch()
+        control_layout.addWidget(QLabel(tr("Поиск:")))
+        control_layout.addWidget(self._search_edit)
         layout.addLayout(control_layout)
 
         layout.addWidget(self._table)
@@ -166,6 +182,7 @@ class CanChannelMonitor(QWidget):
         for edit in self._send_data_edits:
             send_layout.addWidget(edit)
         send_layout.addWidget(self._send_button)
+        send_layout.addWidget(self._send_history_combo)
         send_layout.addWidget(self._cyclic_check)
         send_layout.addWidget(QLabel(tr("интервал мс:")))
         send_layout.addWidget(self._cyclic_interval_edit)
@@ -220,6 +237,22 @@ class CanChannelMonitor(QWidget):
         """Обрабатывает изменение чекбокса паузы."""
         self._paused = state == Qt.CheckState.Checked.value
 
+    def _apply_search(self, text: str = "") -> None:
+        """Скрывает строки таблицы, не содержащие поисковую подстроку."""
+        query = text.strip().lower()
+        if not query:
+            for row in range(self._table.rowCount()):
+                self._table.setRowHidden(row, False)
+            return
+        for row in range(self._table.rowCount()):
+            match = False
+            for col in range(1, 10):  # ID + D0..D7
+                item = self._table.item(row, col)
+                if item is not None and query in item.text().lower():
+                    match = True
+                    break
+            self._table.setRowHidden(row, not match)
+
     def _filter_id(self) -> Optional[int]:
         """Возвращает ID фильтра или None."""
         return hex_to_int(self._filter_edit.text())
@@ -231,9 +264,44 @@ class CanChannelMonitor(QWidget):
             return
         data = parse_data_bytes([edit.text() for edit in self._send_data_edits])
         self._cyclic_frame = pack_can_frame(self._channel_byte, can_id, bytes(data))
-        self._send_cyclic_frame()
+        if self._send_cyclic_frame():
+            self._add_to_history(can_id, data)
         if self._cyclic_check.isChecked():
             self._start_cyclic_timer()
+
+    def _add_to_history(self, can_id: int, data: List[int]) -> None:
+        """Добавляет успешную ручную отправку в историю (максимум 10 записей)."""
+        entry = {"id": can_id, "data": data[:8]}
+        # Удаляем дубликат, если есть
+        self._send_history = [e for e in self._send_history if not (e["id"] == can_id and e["data"] == entry["data"])]
+        self._send_history.insert(0, entry)
+        self._send_history = self._send_history[:10]
+        self._rebuild_history_combo()
+
+    def _rebuild_history_combo(self) -> None:
+        """Перезаполняет выпадающий список истории."""
+        self._send_history_combo.blockSignals(True)
+        self._send_history_combo.clear()
+        self._send_history_combo.addItem(tr("— История —"), None)
+        for entry in self._send_history:
+            id_text = int_to_hex(entry["id"], 8 if entry["id"] > 0x7FF else 3)
+            data_text = " ".join(int_to_hex(b, 2) for b in entry["data"])
+            label = f"ID: {id_text} Data: {data_text}"
+            self._send_history_combo.addItem(label, entry)
+        self._send_history_combo.blockSignals(False)
+
+    def _on_history_activated(self, index: int) -> None:
+        """Заполняет поля ID и Data из выбранной истории."""
+        entry = self._send_history_combo.itemData(index)
+        if not isinstance(entry, dict):
+            return
+        can_id = entry.get("id")
+        data = entry.get("data", [])
+        if can_id is None:
+            return
+        self._send_id_edit.setText(int_to_hex(can_id, 8 if can_id > 0x7FF else 3))
+        for i, edit in enumerate(self._send_data_edits):
+            edit.setText(int_to_hex(data[i], 2) if i < len(data) else "")
 
     def _start_cyclic_timer(self) -> None:
         """Запускает таймер циклической отправки."""
@@ -251,14 +319,16 @@ class CanChannelMonitor(QWidget):
             self._cyclic_timer.stop()
             logger.info("Циклическая отправка CAN%d остановлена", self._channel)
 
-    def _send_cyclic_frame(self) -> None:
+    def _send_cyclic_frame(self) -> bool:
         """Отправляет сохранённый кадр и помечает его как ручную отправку."""
         if self._cyclic_frame is None:
-            return
+            return False
         if self._serial_manager.send_data(self._cyclic_frame):
             can_id = int.from_bytes(self._cyclic_frame[2:6], "little") if self._cyclic_frame[0] == MARKER_TX_EXT else (self._cyclic_frame[2] | (self._cyclic_frame[3] << 8))
             self._manual_send_ids.add(can_id)
             logger.info("Циклическая отправка CAN%d: ID=0x%s", self._channel, int_to_hex(can_id, 8))
+            return True
+        return False
 
     def _on_cyclic_changed(self, state: int) -> None:
         """Обрабатывает изменение чекбокса циклической отправки."""
@@ -321,6 +391,8 @@ class CanChannelMonitor(QWidget):
                     item.setBackground(highlight_color)
 
         self._table.scrollToBottom()
+        if self._search_edit.text().strip():
+            self._apply_search(self._search_edit.text())
 
     def _show_context_menu(self, position) -> None:
         """Показывает контекстное меню для выбранной строки таблицы."""
@@ -333,10 +405,13 @@ class CanChannelMonitor(QWidget):
         copy_id_action.triggered.connect(lambda: self._copy_selected_id(row))
         copy_data_action = QAction(tr("Копировать данные"), self)
         copy_data_action.triggered.connect(lambda: self._copy_selected_data(row))
+        copy_row_action = QAction(tr("Копировать всю строку"), self)
+        copy_row_action.triggered.connect(lambda: self._copy_selected_row(row))
         create_trigger_action = QAction(tr("Создать триггер из пакета"), self)
         create_trigger_action.triggered.connect(lambda: self._create_trigger_from_row(row))
         menu.addAction(copy_id_action)
         menu.addAction(copy_data_action)
+        menu.addAction(copy_row_action)
         menu.addAction(create_trigger_action)
         menu.exec(self._table.viewport().mapToGlobal(position))
 
@@ -354,6 +429,15 @@ class CanChannelMonitor(QWidget):
             if item is not None and item.text():
                 values.append(item.text())
         QApplication.clipboard().setText(" ".join(values))
+
+    def _copy_selected_row(self, row: int) -> None:
+        """Копирует всю строку таблицы в формате лога."""
+        values = []
+        for col in range(self._table.columnCount()):
+            item = self._table.item(row, col)
+            values.append(item.text() if item is not None else "")
+        # Формат: Время ID D0-D7 DLC
+        QApplication.clipboard().setText("  ".join(values))
 
     def _create_trigger_from_row(self, row: int) -> None:
         """Создаёт триггер из выбранного пакета и запрашивает открытие вкладки CAN Тригер."""

@@ -135,6 +135,7 @@ class SerialManager(QObject):
         self._last_baudrate = 115200
         self._last_emulation = False
         self._closing = False
+        self._replay_path: Optional[str] = None
 
     def is_open(self) -> bool:
         """Возвращает True, если порт открыт."""
@@ -168,6 +169,9 @@ class SerialManager(QObject):
         try:
             if emulation:
                 self._port = FakeSerial(port_name, baudrate, error_probability)
+                if self._replay_path:
+                    self._port.load_replay_data(self._replay_path)
+                    self._port.enable_replay(True)
                 self._port.open()
                 logger.info("Открыт эмулированный порт %s (ошибки %d%%)", port_name, error_probability)
             else:
@@ -219,6 +223,11 @@ class SerialManager(QObject):
 
         self.connection_changed.emit(False)
         self._closing = False
+
+    def set_replay_path(self, path: Optional[str]) -> None:
+        """Устанавливает путь к CSV-дампу для эмулятора."""
+        self._replay_path = path
+        logger.info("Установлен путь к дампу: %s", path)
 
     def send_data(self, data: bytes) -> bool:
         """Отправляет байты в порт в потокобезопасном режиме.

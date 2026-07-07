@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Optional
 
 from PySide6.QtCore import QThread, Signal, Qt
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QDragEnterEvent, QDropEvent, QFont
 from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
@@ -90,6 +90,7 @@ class FirmwarePage(QWidget):
             parent: Родительский виджет.
         """
         super().__init__(parent)
+        self.setAcceptDrops(True)
         self._serial_manager = serial_manager
         self._worker: Optional[BootloaderWorker] = None
         self._create_widgets()
@@ -107,6 +108,7 @@ class FirmwarePage(QWidget):
         self._subtitle.setFont(QFont("Segoe UI", 11))
 
         self._file_edit = QLineEdit()
+        self._file_edit.setAcceptDrops(True)
         self._file_edit.setFont(font)
         self._file_edit.setPlaceholderText(tr("Путь к .bin файлу"))
 
@@ -160,6 +162,36 @@ class FirmwarePage(QWidget):
         layout.addWidget(self._progress)
         layout.addWidget(self._status_label)
         layout.addStretch()
+
+    def _set_drop_highlight(self, enabled: bool) -> None:
+        """Подсвечивает/сбрасывает рамку поля пути при drag-and-drop."""
+        color = "#6C8CFF" if enabled else ""
+        self._file_edit.setStyleSheet(f"QLineEdit {{ border: 2px solid {color}; }}" if enabled else "")
+
+    def dragEnterEvent(self, event: QDragEnterEvent) -> None:  # noqa: N802
+        """Принимает перетаскивание только .bin/.hex файлов."""
+        urls = event.mimeData().urls() if event.mimeData() else []
+        if any(url.toLocalFile().lower().endswith((".bin", ".hex")) for url in urls):
+            event.acceptProposedAction()
+            self._set_drop_highlight(True)
+        else:
+            event.ignore()
+
+    def dragLeaveEvent(self, event) -> None:  # noqa: N802
+        """Сбрасывает подсветку при уходе перетаскиваемого объекта."""
+        self._set_drop_highlight(False)
+
+    def dropEvent(self, event: QDropEvent) -> None:  # noqa: N802
+        """Вставляет путь первого подходящего файла в поле ввода."""
+        self._set_drop_highlight(False)
+        urls = event.mimeData().urls() if event.mimeData() else []
+        for url in urls:
+            path = url.toLocalFile()
+            if path.lower().endswith((".bin", ".hex")):
+                self._file_edit.setText(path)
+                event.acceptProposedAction()
+                return
+        event.ignore()
 
     def _on_browse(self) -> None:
         """Открывает диалог выбора файла прошивки."""

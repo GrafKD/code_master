@@ -2,15 +2,17 @@
 
 import sys
 import traceback
+from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QFont, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QButtonGroup,
     QCheckBox,
     QComboBox,
+    QFileDialog,
     QHBoxLayout,
     QLabel,
     QMainWindow,
@@ -28,7 +30,9 @@ from core.update_checker import check_for_updates
 from models.config import Config
 from models.logger import get_logger, open_log_folder
 from models.translations import _ as tr, set_language
+from ui.can_graph_tab import CanGraphTab
 from ui.can_monitor_tab import CanMonitorTab
+from ui.can_overlay import CanOverlay
 from ui.can_trigger_tab import CanTriggerTab
 from ui.dark_theme import apply_dark_theme, apply_light_theme
 from ui.firmware_page import FirmwarePage
@@ -37,10 +41,49 @@ from ui.flexible_logic_tab import FlexibleLogicTab
 logger = get_logger(__name__)
 
 try:
+    from serial import Serial
     from serial.tools.list_ports import comports
 except Exception:  # noqa: BLE001
     def comports() -> list:
         return []
+
+
+class BaudRateDetector(QThread):
+    """Фоновый поток автоопределения скорости COM-порта по bootloader sync."""
+
+    baud_found = Signal(int)
+    finished_no_result = Signal()
+
+    def __init__(self, port_name: str, parent: Optional[QWidget] = None) -> None:
+        """Создаёт поток детектора.
+
+        Args:
+            port_name: Имя COM-порта для проверки.
+            parent: Родительский виджет.
+        """
+        super().__init__(parent)
+        self._port_name = port_name
+        self._baud_rates = [9600, 19200, 38400, 57600, 115200]
+        self._timeout = 0.5
+
+    def run(self) -> None:
+        """Перебирает скорости и ищет ACK 0x79 на команду 0x7F."""
+        for baud in self._baud_rates:
+            if self.isInterruptionRequested():
+                break
+            try:
+                with Serial(self._port_name, baud, timeout=self._timeout) as port:
+                    port.write_timeout = 0.5
+                    port.reset_input_buffer()
+                    port.reset_output_buffer()
+                    port.write(bytes([0x7F]))
+                    response = port.read(1)
+                    if response == bytes([0x79]):
+                        self.baud_found.emit(baud)
+                        return
+            except Exception:  # noqa: BLE001
+                continue
+        self.finished_no_result.emit()
 
 
 class StartupWidget(QWidget):
@@ -104,6 +147,11 @@ class StartupWidget(QWidget):
         self._settings_baud_combo.setFont(font)
         self._settings_baud_combo.addItems(["9600", "19200", "38400", "57600", "115200", "230400", "460800"])
 
+        self._settings_auto_baud_button = QPushButton(tr("Автоопределить"))
+        self._settings_auto_baud_button.setFixedSize(110, 28)
+        self._settings_auto_baud_button.setFont(font)
+        self._settings_auto_baud_button.clicked.connect(self._on_auto_baudrate)
+
         self._settings_emulation_check = QCheckBox(tr("Режим эмуляции"))
         self._settings_emulation_check.setFont(font)
         self._settings_emulation_check.stateChanged.connect(self._on_emulation_changed)
@@ -120,6 +168,16 @@ class StartupWidget(QWidget):
         self._settings_error_slider.setValue(0)
         self._settings_error_slider.setEnabled(False)
         self._settings_error_slider.valueChanged.connect(self._on_error_slider_changed)
+
+        self._settings_load_replay_button = QPushButton(tr("Загрузить дамп"))
+        self._settings_load_replay_button.setFixedSize(130, 28)
+        self._settings_load_replay_button.setFont(font)
+        self._settings_load_replay_button.setEnabled(False)
+        self._settings_load_replay_button.clicked.connect(self._on_load_replay_dump)
+
+        self._settings_replay_label = QLabel("")
+        self._settings_replay_label.setFont(font)
+        self._settings_replay_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self._settings_save_button = QPushButton(tr("Сохранить"))
         self._settings_save_button.setFixedSize(130, 34)
@@ -177,10 +235,13 @@ class StartupWidget(QWidget):
         settings_layout.addWidget(self._settings_port_combo)
         settings_layout.addWidget(self._settings_baud_label)
         settings_layout.addWidget(self._settings_baud_combo)
+        settings_layout.addWidget(self._settings_auto_baud_button)
         settings_layout.addWidget(self._settings_emulation_check)
         settings_layout.addWidget(self._settings_auto_reconnect_check)
         settings_layout.addWidget(self._settings_error_label)
         settings_layout.addWidget(self._settings_error_slider)
+        settings_layout.addWidget(self._settings_load_replay_button)
+        settings_layout.addWidget(self._settings_replay_label)
         settings_layout.addSpacing(10)
 
         settings_buttons_layout = QHBoxLayout()
@@ -227,14 +288,69 @@ class StartupWidget(QWidget):
         self._on_emulation_changed()
 
     def _on_emulation_changed(self, state: int = 0) -> None:
-        """Включает/отключает настройку ошибок."""
+        """Включает/отключает настройки эмуляции."""
         enabled = self._settings_emulation_check.isChecked()
         self._settings_error_label.setEnabled(enabled)
         self._settings_error_slider.setEnabled(enabled)
+        self._settings_load_replay_button.setEnabled(enabled)
+        if not enabled:
+            self._settings_replay_label.setText("")
+            self._serial_manager.set_replay_path(None)
 
     def _on_error_slider_changed(self, value: int) -> None:
         """Обновляет текст метки вероятности ошибки."""
         self._settings_error_label.setText(tr("Вероятность ошибки CAN: {0}%").format(value))
+
+    def _on_load_replay_dump(self) -> None:
+        """Загружает CSV-дамп для воспроизведения в эмуляторе."""
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            tr("Загрузить дамп CAN"),
+            "",
+            "CSV files (*.csv);;All files (*.*)",
+        )
+        if not path:
+            return
+        self._serial_manager.set_replay_path(path)
+        self._settings_replay_label.setText(tr("Воспроизведение…") + f" ({Path(path).name})")
+        self._settings_replay_label.setStyleSheet("color: #6C8CFF;")
+
+    def _on_auto_baudrate(self) -> None:
+        """Запускает фоновое автоопределение скорости COM-порта."""
+        port_text = self._settings_port_combo.currentText()
+        if not port_text or port_text.startswith("FAKE"):
+            self._settings_status_label.setText(tr("Выберите реальный COM-порт"))
+            self._settings_status_label.setStyleSheet("color: #F44336; font-weight: bold;")
+            return
+
+        if self._serial_manager.is_open():
+            self._serial_manager.close_port()
+
+        self._settings_auto_baud_button.setEnabled(False)
+        self._settings_status_label.setText(tr("Определение скорости..."))
+        self._settings_status_label.setStyleSheet("color: #6C8CFF;")
+
+        self._baud_detector = BaudRateDetector(port_text, self)
+        self._baud_detector.baud_found.connect(self._on_baud_found)
+        self._baud_detector.finished_no_result.connect(self._on_baud_not_found)
+        self._baud_detector.start()
+
+    def _on_baud_found(self, baud: int) -> None:
+        """Устанавливает найденную скорость в выпадающем списке."""
+        self._settings_auto_baud_button.setEnabled(True)
+        index = self._settings_baud_combo.findText(str(baud))
+        if index >= 0:
+            self._settings_baud_combo.setCurrentIndex(index)
+        self._settings_status_label.setText(tr("Скорость определена: {0}").format(baud))
+        self._settings_status_label.setStyleSheet("color: #4CAF50; font-weight: bold;")
+        logger.info("Автоопределение скорости: найдена %d для %s", baud, self._settings_port_combo.currentText())
+
+    def _on_baud_not_found(self) -> None:
+        """Показывает сообщение, что скорость не определена."""
+        self._settings_auto_baud_button.setEnabled(True)
+        self._settings_status_label.setText(tr("Не удалось определить скорость"))
+        self._settings_status_label.setStyleSheet("color: #F44336; font-weight: bold;")
+        logger.warning("Автоопределение скорости не удалось для %s", self._settings_port_combo.currentText())
 
     def _update_port_info(self) -> None:
         """Обновляет информацию о текущем порте."""
@@ -420,6 +536,11 @@ class MainWindow(QMainWindow):
         self._update_check_button.setToolTip(tr("Проверка обновлений"))
         self._update_check_button.clicked.connect(self._on_check_updates_clicked)
 
+        self._overlay_check = QCheckBox(tr("Поверх всех окон"))
+        self._overlay_check.setFont(font)
+        self._overlay_check.setToolTip(tr("Показать плавающий индикатор активности CAN"))
+        self._overlay_check.stateChanged.connect(self._on_overlay_toggled)
+
         self._exit_button = QPushButton("✕ " + tr("Выход"))
         self._exit_button.setFixedSize(90, 28)
         self._exit_button.setFont(font)
@@ -436,6 +557,7 @@ class MainWindow(QMainWindow):
             ("🔍", tr("Мониторинг")),
             ("🧩", tr("Гибкая логика")),
             ("⚙️", tr("Прошивка")),
+            ("📈", tr("График")),
         ]
         for icon, text in menu_items:
             btn = QPushButton(f"{icon}\n{text}")
@@ -458,12 +580,14 @@ class MainWindow(QMainWindow):
         self._trigger_tab = CanTriggerTab(self._serial_manager, self)
         self._monitor_tab = CanMonitorTab(self._serial_manager, self)
         self._flexible_logic_tab = FlexibleLogicTab(self._serial_manager, self)
+        self._graph_tab = CanGraphTab(self._serial_manager, self)
 
         self._main_stack.addWidget(self._trigger_tab)       # 0 Триггеры
         self._main_stack.addWidget(self._monitor_tab)        # 1 Мониторинг
         self._main_stack.addWidget(self._flexible_logic_tab)  # 2 Гибкая логика
         self._firmware_page = FirmwarePage(self._serial_manager, self)
         self._main_stack.addWidget(self._firmware_page)       # 3 Прошивка
+        self._main_stack.addWidget(self._graph_tab)           # 4 График
 
         # Статус-бар
         self._status_bar = QStatusBar()
@@ -476,6 +600,9 @@ class MainWindow(QMainWindow):
         self._heartbeat_timer = QTimer(self)
         self._heartbeat_timer.timeout.connect(self._reset_port_indicator)
         self._heartbeat_timer.start(1500)
+
+        # Плавающий индикатор CAN
+        self._overlay = CanOverlay(self)
 
     def _build_layout(self) -> None:
         """Собирает компоновку главного окна."""
@@ -501,6 +628,7 @@ class MainWindow(QMainWindow):
         top_layout.addWidget(self._theme_button)
         top_layout.addWidget(self._lang_button)
         top_layout.addWidget(self._update_check_button)
+        top_layout.addWidget(self._overlay_check)
         top_layout.addWidget(self._exit_button)
 
         root.addWidget(top_panel)
@@ -541,6 +669,9 @@ class MainWindow(QMainWindow):
         self._serial_manager.new_can_frame.connect(self._monitor_tab.process_frame)
         self._serial_manager.new_can_frame.connect(self._trigger_tab.process_frame)
         self._serial_manager.new_can_frame.connect(self._flexible_logic_tab.process_frame)
+        self._serial_manager.new_can_frame.connect(self._graph_tab.process_frame)
+        self._serial_manager.heartbeat.connect(self._overlay.pulse)
+        self._serial_manager.new_can_frame.connect(self._overlay.pulse)
         self._monitor_tab.create_trigger_requested.connect(self._on_create_trigger_from_packet)
 
     def _setup_shortcuts(self) -> None:
@@ -555,6 +686,13 @@ class MainWindow(QMainWindow):
         self._update_port_indicator()
         self._status_label.setText(tr("Готов"))
         logger.info("Переключение в рабочий режим")
+
+    def _on_overlay_toggled(self, state: int) -> None:
+        """Показывает/скрывает плавающий индикатор."""
+        if state == Qt.CheckState.Checked.value:
+            self._overlay.show()
+        else:
+            self._overlay.hide()
 
     def _set_page(self, index: int) -> None:
         """Переключает центральную страницу основного режима."""
@@ -660,6 +798,7 @@ class MainWindow(QMainWindow):
         """Корректно закрывает приложение."""
         logger.info("Закрытие главного окна")
         self._heartbeat_timer.stop()
+        self._overlay.close()
         self._serial_manager.close_port()
         event.accept()
 

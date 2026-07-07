@@ -1,18 +1,37 @@
 """Эмулятор COM-порта для отладки интерфейса без реального STM32.
 
 FakeSerial имитирует интерфейс pyserial.Serial: генерация случайных CAN-кадров,
-ответы на команды бутлоадера и стандартные методы read/write/close.
+ответы на команды бутлоадера, воспроизведение CSV-дампов и стандартные методы read/write/close.
 """
 
+import csv
 import random
 import threading
 import time
-from typing import Optional
+from datetime import datetime
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+from PySide6.QtCore import QTimer
 
 from core.can_protocol import MARKER_RX, MARKER_RX_EXT, MARKER_TX, MARKER_TX_EXT, pack_can_frame, xor_checksum
 from models.logger import get_logger
+from models.utils import hex_to_int
 
 logger = get_logger(__name__)
+
+
+def _parse_csv_time(time_str: str) -> Optional[float]:
+    """Парсит строку времени из CSV в Unix timestamp."""
+    for fmt in ("%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S", "%H:%M:%S.%f", "%H:%M:%S"):
+        try:
+            return datetime.strptime(time_str, fmt).timestamp()
+        except ValueError:
+            continue
+    try:
+        return float(time_str)
+    except ValueError:
+        return None
 
 
 class FakeSerial:
@@ -36,9 +55,109 @@ class FakeSerial:
         self._bootloader_mode = False
         self._last_address = 0
 
+        self._replay_enabled = False
+        self._replay_data: List[Tuple[float, int, int, bytes]] = []
+        self._replay_index = 0
+        self._replay_start_time = 0.0
+        self._replay_timer = QTimer()
+        self._replay_timer.setSingleShot(True)
+        self._replay_timer.timeout.connect(self._emit_replay_frame)
+
+    def load_replay_data(self, filepath: str) -> bool:
+        """Загружает CSV-дамп с CAN-кадрами для воспроизведения.
+
+        Поддерживает формат записи: timestamp,channel,id,dlc,data (data — hex-строка).
+        """
+        path = Path(filepath)
+        if not path.exists():
+            logger.error("Файл дампа не найден: %s", filepath)
+            return False
+        records: List[Tuple[float, int, int, bytes]] = []
+        try:
+            with path.open("r", encoding="utf-8", newline="") as file:
+                reader = csv.reader(file)
+                header = next(reader, None)
+                if header is None:
+                    return False
+                header_lower = [h.strip().lower() for h in header]
+                has_data_col = "data" in header_lower
+                has_d0 = "d0" in header_lower
+                time_idx = header_lower.index("time") if "time" in header_lower else 0
+                channel_idx = header_lower.index("channel") if "channel" in header_lower else 1
+                id_idx = header_lower.index("id") if "id" in header_lower else 2
+
+                first_time: Optional[float] = None
+                for row in reader:
+                    if not row:
+                        continue
+                    ts = _parse_csv_time(row[time_idx].strip())
+                    if ts is None:
+                        continue
+                    if first_time is None:
+                        first_time = ts
+                    try:
+                        channel = int(row[channel_idx])
+                        can_id = hex_to_int(row[id_idx])
+                        if can_id is None:
+                            continue
+                        if has_data_col:
+                            data_str = row[id_idx + 2] if len(row) > id_idx + 2 else ""
+                            data = bytes(int(b, 16) for b in data_str.split() if b)
+                        elif has_d0:
+                            d0_idx = header_lower.index("d0")
+                            data = bytes(int(b, 16) for b in row[d0_idx:d0_idx + 8] if b)
+                        else:
+                            data = b""
+                        records.append((ts - first_time, channel, can_id, data))
+                    except (ValueError, IndexError):
+                        continue
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Ошибка чтения дампа %s: %s", filepath, exc)
+            return False
+
+        if not records:
+            return False
+
+        self._replay_data = records
+        self._replay_index = 0
+        logger.info("Загружен дамп %s: %d кадров", filepath, len(records))
+        return True
+
+    def enable_replay(self, enabled: bool) -> None:
+        """Включает/отключает режим воспроизведения дампа."""
+        self._replay_enabled = enabled and bool(self._replay_data)
+
+    def _start_replay(self) -> None:
+        """Запускает воспроизведение с начала."""
+        self._replay_index = 0
+        self._replay_start_time = time.time()
+        self._emit_replay_frame()
+
+    def _emit_replay_frame(self) -> None:
+        """Вставляет в буфер следующий кадр из дампа и планирует следующий."""
+        if not self._is_open or not self._replay_enabled:
+            return
+        if self._replay_index >= len(self._replay_data):
+            logger.info("Воспроизведение дампа завершено")
+            return
+
+        rel_time, channel, can_id, data = self._replay_data[self._replay_index]
+        elapsed = time.time() - self._replay_start_time
+        delay = rel_time - elapsed
+
+        if delay > 0.001:
+            self._replay_timer.start(int(delay * 1000))
+            return
+
+        frame = self._swap_marker(pack_can_frame(channel, can_id, data))
+        with self._buffer_lock:
+            self._rx_buffer.extend(frame)
+        self._replay_index += 1
+        self._emit_replay_frame()
+
     def _schedule_frame(self) -> None:
         """Добавляет в буфер случайный CAN-кадр и планирует следующий."""
-        if not self._is_open:
+        if not self._is_open or self._replay_enabled:
             return
 
         channel = random.choice([0x01, 0x02])
@@ -79,16 +198,20 @@ class FakeSerial:
         return bytes(frame)
 
     def open(self) -> None:
-        """Открывает эмулятор порта и запускает генерацию кадров."""
+        """Открывает эмулятор порта и запускает генерацию или воспроизведение."""
         self._is_open = True
-        self._schedule_frame()
+        if self._replay_enabled:
+            self._start_replay()
+        else:
+            self._schedule_frame()
 
     def close(self) -> None:
-        """Закрывает эмулятор и останавливает таймер."""
+        """Закрывает эмулятор и останавливает таймеры."""
         self._is_open = False
         if self._timer is not None:
             self._timer.cancel()
             self._timer = None
+        self._replay_timer.stop()
 
     def is_open(self) -> bool:
         """Возвращает True, если эмулятор активен."""
