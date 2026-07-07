@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPushButton,
+    QSpinBox,
     QSplitter,
     QTableWidget,
     QTableWidgetItem,
@@ -409,6 +410,58 @@ class CanMonitorTab(QWidget):
         self._record_button.setFont(QFont("Segoe UI", 9))
         self._record_button.clicked.connect(self._toggle_recording)
 
+        # Панель отправки и триггера
+        self._send_id_edit = QLineEdit()
+        self._send_id_edit.setFixedWidth(90)
+        self._send_id_edit.setMaxLength(8)
+        self._send_id_edit.setFont(QFont("Segoe UI", 9))
+        self._send_id_edit.setPlaceholderText("ID HEX")
+
+        self._send_data_edit = QLineEdit()
+        self._send_data_edit.setFixedWidth(140)
+        self._send_data_edit.setFont(QFont("Segoe UI", 9))
+        self._send_data_edit.setPlaceholderText("D0 D1 D2 ...")
+
+        self._repeat_spin = QSpinBox()
+        self._repeat_spin.setRange(1, 100)
+        self._repeat_spin.setValue(1)
+        self._repeat_spin.setFixedWidth(70)
+        self._repeat_spin.setFont(QFont("Segoe UI", 9))
+
+        self._interval_spin = QSpinBox()
+        self._interval_spin.setRange(1, 1000)
+        self._interval_spin.setValue(10)
+        self._interval_spin.setSuffix(" мс")
+        self._interval_spin.setFixedWidth(90)
+        self._interval_spin.setFont(QFont("Segoe UI", 9))
+
+        self._send_button = QPushButton("Отправить")
+        self._send_button.setFixedSize(90, 28)
+        self._send_button.setFont(QFont("Segoe UI", 9))
+        self._send_button.clicked.connect(self._on_send_clicked)
+
+        self._trigger_check = QCheckBox("Триггер")
+        self._trigger_check.setFont(QFont("Segoe UI", 9))
+        self._trigger_check.setToolTip("Автоматический ответ на входящий пакет с указанным ID")
+        self._trigger_check.stateChanged.connect(self._on_trigger_mode_changed)
+
+        self._mask_edit = QLineEdit()
+        self._mask_edit.setFixedWidth(90)
+        self._mask_edit.setFont(QFont("Segoe UI", 9))
+        self._mask_edit.setPlaceholderText("Маска HEX")
+        self._mask_edit.setEnabled(False)
+        self._mask_edit.setToolTip("Маска входящих данных для сравнения (опционально)")
+
+        self._send_status_label = QLabel("")
+        self._send_status_label.setFont(QFont("Segoe UI", 9))
+
+        self._repeat_timer = QTimer(self)
+        self._repeat_timer.timeout.connect(self._send_one_repeated_frame)
+        self._repeat_remaining = 0
+        self._repeat_frame: bytes = b""
+        self._trigger_response_data: List[int] = []
+        self._trigger_response_mask: List[int] = []
+
         self._splitter = QSplitter(Qt.Orientation.Horizontal)
         self._monitor1 = CanChannelMonitor(1, self._serial_manager, self)
         self._monitor2 = CanChannelMonitor(2, self._serial_manager, self)
@@ -432,6 +485,23 @@ class CanMonitorTab(QWidget):
         buttons_layout.addStretch()
         layout.addLayout(buttons_layout)
 
+        send_layout = QHBoxLayout()
+        send_layout.setSpacing(6)
+        send_layout.addWidget(QLabel("ID:"))
+        send_layout.addWidget(self._send_id_edit)
+        send_layout.addWidget(QLabel("Данные:"))
+        send_layout.addWidget(self._send_data_edit)
+        send_layout.addWidget(QLabel("Повторы:"))
+        send_layout.addWidget(self._repeat_spin)
+        send_layout.addWidget(QLabel("Интервал:"))
+        send_layout.addWidget(self._interval_spin)
+        send_layout.addWidget(self._send_button)
+        send_layout.addWidget(self._trigger_check)
+        send_layout.addWidget(self._mask_edit)
+        send_layout.addStretch()
+        layout.addLayout(send_layout)
+
+        layout.addWidget(self._send_status_label)
         layout.addWidget(self._splitter)
 
     def _start_all(self) -> None:
@@ -451,6 +521,79 @@ class CanMonitorTab(QWidget):
         self._monitor1._clear()
         self._monitor2._clear()
 
+    def _on_trigger_mode_changed(self, state: int) -> None:
+        """Включает/отключает маску в режиме триггера."""
+        self._mask_edit.setEnabled(state == Qt.CheckState.Checked.value)
+
+    def _parse_global_data(self) -> List[int]:
+        """Парсит строку данных из глобального поля в список байт."""
+        text = self._send_data_edit.text().strip()
+        if not text:
+            return []
+        return parse_data_bytes(text.split())
+
+    def _on_send_clicked(self) -> None:
+        """Отправляет пакет с учётом повторов и интервала."""
+        if self._trigger_check.isChecked():
+            # В режиме триггера кнопка просто сохраняет настройки
+            self._trigger_response_data = self._parse_global_data()
+            mask_text = self._mask_edit.text().strip()
+            self._trigger_response_mask = parse_data_bytes(mask_text.split()) if mask_text else []
+            self._send_status_label.setText("Триггер активирован")
+            logger.info("Триггер мониторинга активирован: ID=%s", self._send_id_edit.text())
+            return
+
+        can_id = hex_to_int(self._send_id_edit.text())
+        if can_id is None:
+            self._send_status_label.setText("Ошибка: неверный ID")
+            return
+        data = self._parse_global_data()
+        self._repeat_frame = pack_can_frame(0x01, can_id, bytes(data))
+        self._repeat_remaining = self._repeat_spin.value()
+        interval_ms = self._interval_spin.value()
+        self._send_status_label.setText(f"Отправка {self._repeat_remaining} пакетов...")
+        self._send_one_repeated_frame()
+        if self._repeat_remaining > 0:
+            self._repeat_timer.start(interval_ms)
+
+    def _send_one_repeated_frame(self) -> None:
+        """Отправляет один пакет из серии повторов."""
+        if self._repeat_remaining <= 0:
+            self._repeat_timer.stop()
+            self._send_status_label.setText("Отправка завершена")
+            return
+        if self._serial_manager.send_data(self._repeat_frame):
+            self._repeat_remaining -= 1
+        else:
+            self._repeat_timer.stop()
+            self._send_status_label.setText("Ошибка отправки")
+
+    def _check_trigger_response(self, frame: Dict[str, object]) -> None:
+        """Проверяет входящий кадр на условие триггера и отправляет ответ."""
+        if not self._trigger_check.isChecked():
+            return
+        trigger_id = hex_to_int(self._send_id_edit.text())
+        if trigger_id is None:
+            return
+        frame_id = int(frame["id"])
+        if frame_id != trigger_id:
+            return
+
+        frame_data = bytes(frame["data"])
+        if self._trigger_response_mask:
+            if len(frame_data) < len(self._trigger_response_mask):
+                return
+            for i, mask_byte in enumerate(self._trigger_response_mask):
+                if (frame_data[i] & mask_byte) != (self._trigger_response_data[i] & mask_byte if i < len(self._trigger_response_data) else 0):
+                    return
+
+        channel = int(frame["channel"])
+        resp_data = bytes(self._trigger_response_data[:8])
+        resp_frame = pack_can_frame(channel, frame_id, resp_data)
+        self._serial_manager.send_data(resp_frame)
+        self._send_status_label.setText(f"Автоответ: ID {int_to_hex(frame_id, 8)}")
+        logger.info("Автоответ мониторинга: ID=0x%s в канал %d", int_to_hex(frame_id, 8), channel)
+
     def process_frame(self, frame: Dict[str, object]) -> None:
         """Распределяет CAN-кадр по соответствующему каналу и записывает в CSV при необходимости.
 
@@ -462,6 +605,7 @@ class CanMonitorTab(QWidget):
             self._monitor1.add_frame(frame)
         elif channel == 2:
             self._monitor2.add_frame(frame)
+        self._check_trigger_response(frame)
         self._write_frame_to_csv(frame)
 
     def _toggle_recording(self) -> None:

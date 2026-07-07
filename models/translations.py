@@ -94,8 +94,16 @@ class Translator:
                 "Шлюз": "Gateway",
                 "Библиотека": "Library",
                 "Прошивка": "Firmware",
+                "Мониторинг": "Monitoring",
+                "Гибкая логика": "Flexible logic",
                 "Готов": "Ready",
                 "Индикатор подключения COM-порта": "COM port connection indicator",
+                "Порт не открыт": "Port not open",
+                "Нет подключения": "No connection",
+                "Ошибка порта": "Port error",
+                "Проверка обновлений": "Update check",
+                "Доступно обновление": "Update available",
+                "Последняя версия": "Latest version",
             },
         }
 
