@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
 from core.can_protocol import MARKER_TX_EXT, pack_can_frame
 from core.serial_manager import SerialManager
 from models.logger import get_logger
+from models.translations import _ as tr
 from models.utils import format_data_bytes, hex_to_int, int_to_hex, parse_data_bytes
 
 logger = get_logger(__name__)
@@ -67,17 +68,17 @@ class CanChannelMonitor(QWidget):
 
     def _create_widgets(self) -> None:
         """Создаёт элементы управления каналом."""
-        self._start_button = QPushButton("Старт")
+        self._start_button = QPushButton(tr("Старт"))
         self._start_button.setFixedSize(60, 24)
         self._start_button.setFont(QFont("Segoe UI", 9))
         self._start_button.clicked.connect(self._start)
 
-        self._stop_button = QPushButton("Стоп")
+        self._stop_button = QPushButton(tr("Стоп"))
         self._stop_button.setFixedSize(60, 24)
         self._stop_button.setFont(QFont("Segoe UI", 9))
         self._stop_button.clicked.connect(self._stop)
 
-        self._clear_button = QPushButton("Очистить")
+        self._clear_button = QPushButton(tr("Очистить"))
         self._clear_button.setFixedSize(70, 24)
         self._clear_button.setFont(QFont("Segoe UI", 9))
         self._clear_button.clicked.connect(self._clear)
@@ -86,16 +87,16 @@ class CanChannelMonitor(QWidget):
         self._filter_edit.setFixedWidth(110)
         self._filter_edit.setMaxLength(8)
         self._filter_edit.setFont(QFont("Segoe UI", 9))
-        self._filter_edit.setPlaceholderText("ID HEX")
+        self._filter_edit.setPlaceholderText(tr("ID HEX"))
 
-        self._pause_check = QCheckBox("Приостановить")
+        self._pause_check = QCheckBox(tr("Приостановить"))
         self._pause_check.setFont(QFont("Segoe UI", 9))
         self._pause_check.stateChanged.connect(self._on_pause_changed)
 
         self._table = QTableWidget()
         self._table.setColumnCount(11)
         self._table.setHorizontalHeaderLabels(
-            ["Время", "ID", "D0", "D1", "D2", "D3", "D4", "D5", "D6", "D7", "DLC"]
+            [tr("Время"), "ID", "D0", "D1", "D2", "D3", "D4", "D5", "D6", "D7", "DLC"]
         )
         self._table.setFont(QFont("Segoe UI", 9))
         self._table.setAlternatingRowColors(False)
@@ -118,12 +119,12 @@ class CanChannelMonitor(QWidget):
             edit.setPlaceholderText(f"D{i}")
             self._send_data_edits.append(edit)
 
-        self._send_button = QPushButton("Отправить")
+        self._send_button = QPushButton(tr("Отправить"))
         self._send_button.setFixedSize(80, 28)
         self._send_button.setFont(QFont("Segoe UI", 9))
         self._send_button.clicked.connect(self._send_manual)
 
-        self._cyclic_check = QCheckBox("Циклически")
+        self._cyclic_check = QCheckBox(tr("Циклически"))
         self._cyclic_check.setFont(QFont("Segoe UI", 9))
         self._cyclic_check.stateChanged.connect(self._on_cyclic_changed)
 
@@ -138,7 +139,7 @@ class CanChannelMonitor(QWidget):
         self._cyclic_timer.timeout.connect(self._send_cyclic_frame)
         self._cyclic_frame: Optional[bytes] = None
 
-        self._stats_label = QLabel("Принято: 0 | Скорость: 0 пак/с")
+        self._stats_label = QLabel(tr("Принято: 0 | Скорость: 0 пак/с"))
         self._stats_label.setFont(QFont("Segoe UI", 9))
 
     def _layout_widgets(self) -> None:
@@ -151,7 +152,7 @@ class CanChannelMonitor(QWidget):
         control_layout.addWidget(self._start_button)
         control_layout.addWidget(self._stop_button)
         control_layout.addWidget(self._clear_button)
-        control_layout.addWidget(QLabel("Фильтр ID:"))
+        control_layout.addWidget(QLabel(tr("Фильтр ID:")))
         control_layout.addWidget(self._filter_edit)
         control_layout.addWidget(self._pause_check)
         control_layout.addStretch()
@@ -160,13 +161,13 @@ class CanChannelMonitor(QWidget):
         layout.addWidget(self._table)
 
         send_layout = QHBoxLayout()
-        send_layout.addWidget(QLabel("Отправить:"))
+        send_layout.addWidget(QLabel(tr("Отправить:")))
         send_layout.addWidget(self._send_id_edit)
         for edit in self._send_data_edits:
             send_layout.addWidget(edit)
         send_layout.addWidget(self._send_button)
         send_layout.addWidget(self._cyclic_check)
-        send_layout.addWidget(QLabel("интервал мс:"))
+        send_layout.addWidget(QLabel(tr("интервал мс:")))
         send_layout.addWidget(self._cyclic_interval_edit)
         send_layout.addStretch()
         layout.addLayout(send_layout)
@@ -273,7 +274,7 @@ class CanChannelMonitor(QWidget):
         while self._packet_times and now - self._packet_times[0] > 1.0:
             self._packet_times.popleft()
         speed = len(self._packet_times)
-        self._stats_label.setText(f"Принято: {self._received_count} | Скорость: {speed} пак/с")
+        self._stats_label.setText(tr("Принято: {0} | Скорость: {1} пак/с").format(self._received_count, speed))
 
     def add_frame(self, frame: Dict[str, object]) -> None:
         """Добавляет принятый кадр в таблицу канала.
@@ -328,11 +329,11 @@ class CanChannelMonitor(QWidget):
             return
 
         menu = QMenu(self)
-        copy_id_action = QAction("Копировать ID", self)
+        copy_id_action = QAction(tr("Копировать ID"), self)
         copy_id_action.triggered.connect(lambda: self._copy_selected_id(row))
-        copy_data_action = QAction("Копировать данные", self)
+        copy_data_action = QAction(tr("Копировать данные"), self)
         copy_data_action.triggered.connect(lambda: self._copy_selected_data(row))
-        create_trigger_action = QAction("Создать триггер из пакета", self)
+        create_trigger_action = QAction(tr("Создать триггер из пакета"), self)
         create_trigger_action.triggered.connect(lambda: self._create_trigger_from_row(row))
         menu.addAction(copy_id_action)
         menu.addAction(copy_data_action)
@@ -390,22 +391,22 @@ class CanMonitorTab(QWidget):
 
     def _create_widgets(self) -> None:
         """Создаёт элементы вкладки."""
-        self._start_all_button = QPushButton("Запустить оба")
+        self._start_all_button = QPushButton(tr("Запустить оба"))
         self._start_all_button.setFixedSize(110, 28)
         self._start_all_button.setFont(QFont("Segoe UI", 9))
         self._start_all_button.clicked.connect(self._start_all)
 
-        self._stop_all_button = QPushButton("Остановить оба")
+        self._stop_all_button = QPushButton(tr("Остановить оба"))
         self._stop_all_button.setFixedSize(110, 28)
         self._stop_all_button.setFont(QFont("Segoe UI", 9))
         self._stop_all_button.clicked.connect(self._stop_all)
 
-        self._clear_all_button = QPushButton("Очистить всё")
+        self._clear_all_button = QPushButton(tr("Очистить всё"))
         self._clear_all_button.setFixedSize(110, 28)
         self._clear_all_button.setFont(QFont("Segoe UI", 9))
         self._clear_all_button.clicked.connect(self._clear_all)
 
-        self._record_button = QPushButton("Записать в CSV")
+        self._record_button = QPushButton(tr("Записать в CSV"))
         self._record_button.setFixedSize(110, 28)
         self._record_button.setFont(QFont("Segoe UI", 9))
         self._record_button.clicked.connect(self._toggle_recording)
@@ -415,12 +416,12 @@ class CanMonitorTab(QWidget):
         self._send_id_edit.setFixedWidth(90)
         self._send_id_edit.setMaxLength(8)
         self._send_id_edit.setFont(QFont("Segoe UI", 9))
-        self._send_id_edit.setPlaceholderText("ID HEX")
+        self._send_id_edit.setPlaceholderText(tr("ID HEX"))
 
         self._send_data_edit = QLineEdit()
         self._send_data_edit.setFixedWidth(140)
         self._send_data_edit.setFont(QFont("Segoe UI", 9))
-        self._send_data_edit.setPlaceholderText("D0 D1 D2 ...")
+        self._send_data_edit.setPlaceholderText(tr("D0 D1 D2 ..."))
 
         self._repeat_spin = QSpinBox()
         self._repeat_spin.setRange(1, 100)
@@ -435,22 +436,22 @@ class CanMonitorTab(QWidget):
         self._interval_spin.setFixedWidth(90)
         self._interval_spin.setFont(QFont("Segoe UI", 9))
 
-        self._send_button = QPushButton("Отправить")
+        self._send_button = QPushButton(tr("Отправить"))
         self._send_button.setFixedSize(90, 28)
         self._send_button.setFont(QFont("Segoe UI", 9))
         self._send_button.clicked.connect(self._on_send_clicked)
 
-        self._trigger_check = QCheckBox("Триггер")
+        self._trigger_check = QCheckBox(tr("Триггер"))
         self._trigger_check.setFont(QFont("Segoe UI", 9))
-        self._trigger_check.setToolTip("Автоматический ответ на входящий пакет с указанным ID")
+        self._trigger_check.setToolTip(tr("Автоматический ответ на входящий пакет с указанным ID"))
         self._trigger_check.stateChanged.connect(self._on_trigger_mode_changed)
 
         self._mask_edit = QLineEdit()
         self._mask_edit.setFixedWidth(90)
         self._mask_edit.setFont(QFont("Segoe UI", 9))
-        self._mask_edit.setPlaceholderText("Маска HEX")
+        self._mask_edit.setPlaceholderText(tr("Маска HEX"))
         self._mask_edit.setEnabled(False)
-        self._mask_edit.setToolTip("Маска входящих данных для сравнения (опционально)")
+        self._mask_edit.setToolTip(tr("Маска входящих данных для сравнения (опционально)"))
 
         self._send_status_label = QLabel("")
         self._send_status_label.setFont(QFont("Segoe UI", 9))
@@ -487,13 +488,13 @@ class CanMonitorTab(QWidget):
 
         send_layout = QHBoxLayout()
         send_layout.setSpacing(6)
-        send_layout.addWidget(QLabel("ID:"))
+        send_layout.addWidget(QLabel(tr("ID:")))
         send_layout.addWidget(self._send_id_edit)
-        send_layout.addWidget(QLabel("Данные:"))
+        send_layout.addWidget(QLabel(tr("Данные:")))
         send_layout.addWidget(self._send_data_edit)
-        send_layout.addWidget(QLabel("Повторы:"))
+        send_layout.addWidget(QLabel(tr("Повторы:")))
         send_layout.addWidget(self._repeat_spin)
-        send_layout.addWidget(QLabel("Интервал:"))
+        send_layout.addWidget(QLabel(tr("Интервал:")))
         send_layout.addWidget(self._interval_spin)
         send_layout.addWidget(self._send_button)
         send_layout.addWidget(self._trigger_check)
@@ -539,19 +540,19 @@ class CanMonitorTab(QWidget):
             self._trigger_response_data = self._parse_global_data()
             mask_text = self._mask_edit.text().strip()
             self._trigger_response_mask = parse_data_bytes(mask_text.split()) if mask_text else []
-            self._send_status_label.setText("Триггер активирован")
+            self._send_status_label.setText(tr("Триггер активирован"))
             logger.info("Триггер мониторинга активирован: ID=%s", self._send_id_edit.text())
             return
 
         can_id = hex_to_int(self._send_id_edit.text())
         if can_id is None:
-            self._send_status_label.setText("Ошибка: неверный ID")
+            self._send_status_label.setText(tr("Ошибка: неверный ID"))
             return
         data = self._parse_global_data()
         self._repeat_frame = pack_can_frame(0x01, can_id, bytes(data))
         self._repeat_remaining = self._repeat_spin.value()
         interval_ms = self._interval_spin.value()
-        self._send_status_label.setText(f"Отправка {self._repeat_remaining} пакетов...")
+        self._send_status_label.setText(tr("Отправка {0} пакетов...").format(self._repeat_remaining))
         self._send_one_repeated_frame()
         if self._repeat_remaining > 0:
             self._repeat_timer.start(interval_ms)
@@ -560,13 +561,13 @@ class CanMonitorTab(QWidget):
         """Отправляет один пакет из серии повторов."""
         if self._repeat_remaining <= 0:
             self._repeat_timer.stop()
-            self._send_status_label.setText("Отправка завершена")
+            self._send_status_label.setText(tr("Отправка завершена"))
             return
         if self._serial_manager.send_data(self._repeat_frame):
             self._repeat_remaining -= 1
         else:
             self._repeat_timer.stop()
-            self._send_status_label.setText("Ошибка отправки")
+            self._send_status_label.setText(tr("Ошибка отправки"))
 
     def _check_trigger_response(self, frame: Dict[str, object]) -> None:
         """Проверяет входящий кадр на условие триггера и отправляет ответ."""
@@ -591,7 +592,7 @@ class CanMonitorTab(QWidget):
         resp_data = bytes(self._trigger_response_data[:8])
         resp_frame = pack_can_frame(channel, frame_id, resp_data)
         self._serial_manager.send_data(resp_frame)
-        self._send_status_label.setText(f"Автоответ: ID {int_to_hex(frame_id, 8)}")
+        self._send_status_label.setText(tr("Автоответ: ID {0}").format(int_to_hex(frame_id, 8)))
         logger.info("Автоответ мониторинга: ID=0x%s в канал %d", int_to_hex(frame_id, 8), channel)
 
     def process_frame(self, frame: Dict[str, object]) -> None:

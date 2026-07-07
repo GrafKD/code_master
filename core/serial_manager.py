@@ -10,7 +10,7 @@ from typing import Optional, Union
 
 from PySide6.QtCore import QObject, QThread, Signal, QTimer
 
-from core.can_protocol import MARKER_RX, MARKER_RX_EXT, unpack_can_frame
+from core.can_protocol import parse_all_frames
 from core.fake_serial import FakeSerial
 
 import serial
@@ -79,14 +79,9 @@ class SerialReader(QThread):
                     if chunk:
                         self._buffer.extend(chunk)
                         self._error_count = 0
-                        # Парсим все полные кадры из буфера
-                        while True:
-                            frame = unpack_can_frame(bytes(self._buffer))
-                            if frame is None:
-                                break
-                            marker_index = self._buffer.find(bytes([MARKER_RX_EXT])) if frame["extended"] else self._buffer.find(bytes([MARKER_RX]))
-                            total_length = (8 if frame["extended"] else 6) + len(bytes(frame["data"]))
-                            self._buffer = self._buffer[marker_index + total_length :]
+                        # Парсим все полные кадры из буфера и сдвигаем буфер
+                        frames, self._buffer = parse_all_frames(self._buffer)
+                        for frame in frames:
                             logger.debug(
                                 "Принят CAN-кадр: ch=%s id=0x%08X dlc=%d",
                                 frame["channel"],

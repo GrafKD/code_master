@@ -31,6 +31,7 @@ from models.translations import _ as tr, set_language
 from ui.can_monitor_tab import CanMonitorTab
 from ui.can_trigger_tab import CanTriggerTab
 from ui.dark_theme import apply_dark_theme, apply_light_theme
+from ui.firmware_page import FirmwarePage
 from ui.flexible_logic_tab import FlexibleLogicTab
 
 logger = get_logger(__name__)
@@ -66,51 +67,51 @@ class StartupWidget(QWidget):
         font = QFont("Segoe UI", 10)
 
         # Приветственный вид
-        self._title_label = QLabel("Код Мастер")
+        self._title_label = QLabel(tr("Код Мастер"))
         self._title_label.setFont(QFont("Segoe UI", 22, QFont.Weight.Bold))
         self._title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._title_label.setProperty("title", True)
 
-        self._subtitle_label = QLabel("Настройка подключения")
+        self._subtitle_label = QLabel(tr("Настройка подключения"))
         self._subtitle_label.setFont(QFont("Segoe UI", 12))
         self._subtitle_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        self._port_info_label = QLabel("Порт не выбран")
+        self._port_info_label = QLabel(tr("Порт не выбран"))
         self._port_info_label.setFont(QFont("Segoe UI", 11))
         self._port_info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        self._refresh_button = QPushButton("Обновить")
+        self._refresh_button = QPushButton(tr("Обновить"))
         self._refresh_button.setFixedSize(140, 40)
         self._refresh_button.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
         self._refresh_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self._refresh_button.clicked.connect(self._on_refresh)
 
-        self._configure_button = QPushButton("Настроить")
+        self._configure_button = QPushButton(tr("Настроить"))
         self._configure_button.setFixedSize(140, 40)
         self._configure_button.setFont(QFont("Segoe UI", 11))
         self._configure_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self._configure_button.clicked.connect(self._show_settings)
 
         # Панель настроек
-        self._settings_port_label = QLabel("COM-порт:")
+        self._settings_port_label = QLabel(tr("COM-порт:"))
         self._settings_port_label.setFont(font)
         self._settings_port_combo = QComboBox()
         self._settings_port_combo.setFont(font)
 
-        self._settings_baud_label = QLabel("Скорость:")
+        self._settings_baud_label = QLabel(tr("Скорость:"))
         self._settings_baud_label.setFont(font)
         self._settings_baud_combo = QComboBox()
         self._settings_baud_combo.setFont(font)
         self._settings_baud_combo.addItems(["9600", "19200", "38400", "57600", "115200", "230400", "460800"])
 
-        self._settings_emulation_check = QCheckBox("Режим эмуляции")
+        self._settings_emulation_check = QCheckBox(tr("Режим эмуляции"))
         self._settings_emulation_check.setFont(font)
         self._settings_emulation_check.stateChanged.connect(self._on_emulation_changed)
 
-        self._settings_auto_reconnect_check = QCheckBox("Автопереподключение")
+        self._settings_auto_reconnect_check = QCheckBox(tr("Автопереподключение"))
         self._settings_auto_reconnect_check.setFont(font)
 
-        self._settings_error_label = QLabel("Вероятность ошибки CAN: 0%")
+        self._settings_error_label = QLabel(tr("Вероятность ошибки CAN: 0%"))
         self._settings_error_label.setFont(font)
         self._settings_error_label.setEnabled(False)
 
@@ -120,13 +121,13 @@ class StartupWidget(QWidget):
         self._settings_error_slider.setEnabled(False)
         self._settings_error_slider.valueChanged.connect(self._on_error_slider_changed)
 
-        self._settings_save_button = QPushButton("Сохранить")
+        self._settings_save_button = QPushButton(tr("Сохранить"))
         self._settings_save_button.setFixedSize(130, 34)
         self._settings_save_button.setFont(font)
         self._settings_save_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self._settings_save_button.clicked.connect(self._on_settings_save)
 
-        self._settings_back_button = QPushButton("Назад")
+        self._settings_back_button = QPushButton(tr("Назад"))
         self._settings_back_button.setFixedSize(130, 34)
         self._settings_back_button.setFont(font)
         self._settings_back_button.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -171,7 +172,7 @@ class StartupWidget(QWidget):
         settings_layout.setSpacing(12)
         settings_layout.setContentsMargins(60, 30, 60, 30)
         settings_layout.addStretch()
-        settings_layout.addWidget(QLabel("Настройки подключения"))
+        settings_layout.addWidget(QLabel(tr("Настройки подключения")))
         settings_layout.addWidget(self._settings_port_label)
         settings_layout.addWidget(self._settings_port_combo)
         settings_layout.addWidget(self._settings_baud_label)
@@ -201,7 +202,7 @@ class StartupWidget(QWidget):
 
     def _load_defaults(self) -> None:
         """Загружает сохранённые настройки и список портов."""
-        self._settings_port_combo.addItem("FAKE (эмулятор)")
+        self._settings_port_combo.addItem(tr("FAKE (эмулятор)"))
         for port_info in comports():
             self._settings_port_combo.addItem(port_info.device)
 
@@ -233,17 +234,17 @@ class StartupWidget(QWidget):
 
     def _on_error_slider_changed(self, value: int) -> None:
         """Обновляет текст метки вероятности ошибки."""
-        self._settings_error_label.setText(f"Вероятность ошибки CAN: {value}%")
+        self._settings_error_label.setText(tr("Вероятность ошибки CAN: {0}%").format(value))
 
     def _update_port_info(self) -> None:
         """Обновляет информацию о текущем порте."""
         port = self._config.get("port", "")
         if not port:
-            self._port_info_label.setText("Порт не выбран")
+            self._port_info_label.setText(tr("Порт не выбран"))
         elif self._serial_manager.is_open():
-            self._port_info_label.setText(f"Порт: {port} (подключён)")
+            self._port_info_label.setText(tr("Порт: {0} (подключён)").format(port))
         else:
-            self._port_info_label.setText(f"Порт: {port} (не подключён)")
+            self._port_info_label.setText(tr("Порт: {0} (не подключён)").format(port))
 
     def _show_welcome(self) -> None:
         """Показывает приветственный вид."""
@@ -254,10 +255,11 @@ class StartupWidget(QWidget):
     def _show_settings(self) -> None:
         """Показывает панель настроек."""
         self._settings_status_label.setText("")
+        self._settings_status_label.setStyleSheet("")
         self._stack.setCurrentIndex(1)
 
     def _on_settings_save(self) -> None:
-        """Сохраняет настройки и возвращает к приветственному виду."""
+        """Сохраняет настройки, пытается подключиться и показывает явный статус."""
         port_text = self._settings_port_combo.currentText()
         port_name = "FAKE" if port_text.startswith("FAKE") else port_text
         baudrate = int(self._settings_baud_combo.currentText())
@@ -273,20 +275,23 @@ class StartupWidget(QWidget):
 
         if self._serial_manager.is_open():
             self._serial_manager.close_port()
-        if auto_reconnect:
-            self._serial_manager.open_port(port_name, baudrate, emulation, True, error_probability)
 
-        self._settings_status_label.setText("Настройки сохранены")
-        logger.info("Настройки COM-порта сохранены: %s", port_name)
-
-        # Небольшая задержка для показа статуса
-        QTimer.singleShot(500, self._show_welcome)
+        if self._serial_manager.open_port(port_name, baudrate, emulation, auto_reconnect, error_probability):
+            self._settings_status_label.setText(tr("Подключено к {0}").format(port_name))
+            self._settings_status_label.setStyleSheet("color: #4CAF50; font-weight: bold;")
+            self._update_port_info()
+            logger.info("Подключение успешно: %s", port_name)
+            QTimer.singleShot(2000, self.connected.emit)
+        else:
+            self._settings_status_label.setText(tr("Не удалось подключиться к {0}").format(port_name))
+            self._settings_status_label.setStyleSheet("color: #F44336; font-weight: bold;")
+            logger.warning("Не удалось подключиться к %s", port_name)
 
     def _on_refresh(self) -> None:
         """Сканирует порты и пытается автоматически подключиться."""
         # Обновляем список портов
         self._settings_port_combo.clear()
-        self._settings_port_combo.addItem("FAKE (эмулятор)")
+        self._settings_port_combo.addItem(tr("FAKE (эмулятор)"))
         for port_info in comports():
             self._settings_port_combo.addItem(port_info.device)
 
@@ -318,8 +323,8 @@ class StartupWidget(QWidget):
             self._update_port_info()
             QMessageBox.warning(
                 self,
-                "Подключение",
-                f"Не удалось подключиться к {port_to_try}.\nНажмите «Настроить» для ручного выбора.",
+                tr("Подключение"),
+                tr("Не удалось подключиться к {0}.\nНажмите «Настроить» для ручного выбора.").format(port_to_try),
             )
 
 
@@ -421,7 +426,7 @@ class MainWindow(QMainWindow):
         self._exit_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self._exit_button.clicked.connect(self.close)
 
-        # Меню-карточки (3 вкладки)
+        # Меню-карточки (4 вкладки)
         self._menu_group = QButtonGroup(self)
         self._menu_group.setExclusive(True)
 
@@ -430,6 +435,7 @@ class MainWindow(QMainWindow):
             ("⚡", tr("Триггеры")),
             ("🔍", tr("Мониторинг")),
             ("🧩", tr("Гибкая логика")),
+            ("⚙️", tr("Прошивка")),
         ]
         for icon, text in menu_items:
             btn = QPushButton(f"{icon}\n{text}")
@@ -451,11 +457,13 @@ class MainWindow(QMainWindow):
         self._main_stack = QStackedWidget()
         self._trigger_tab = CanTriggerTab(self._serial_manager, self)
         self._monitor_tab = CanMonitorTab(self._serial_manager, self)
-        self._flexible_logic_tab = FlexibleLogicTab(self)
+        self._flexible_logic_tab = FlexibleLogicTab(self._serial_manager, self)
 
         self._main_stack.addWidget(self._trigger_tab)       # 0 Триггеры
         self._main_stack.addWidget(self._monitor_tab)        # 1 Мониторинг
         self._main_stack.addWidget(self._flexible_logic_tab)  # 2 Гибкая логика
+        self._firmware_page = FirmwarePage(self._serial_manager, self)
+        self._main_stack.addWidget(self._firmware_page)       # 3 Прошивка
 
         # Статус-бар
         self._status_bar = QStatusBar()
@@ -532,6 +540,7 @@ class MainWindow(QMainWindow):
         self._serial_manager.heartbeat.connect(self._on_heartbeat)
         self._serial_manager.new_can_frame.connect(self._monitor_tab.process_frame)
         self._serial_manager.new_can_frame.connect(self._trigger_tab.process_frame)
+        self._serial_manager.new_can_frame.connect(self._flexible_logic_tab.process_frame)
         self._monitor_tab.create_trigger_requested.connect(self._on_create_trigger_from_packet)
 
     def _setup_shortcuts(self) -> None:
@@ -573,7 +582,7 @@ class MainWindow(QMainWindow):
             open_log_folder()
         except Exception as exc:  # noqa: BLE001
             logger.error("Не удалось открыть папку с логами: %s", exc)
-            QMessageBox.critical(self, tr("Ошибка"), f"Не удалось открыть папку с логами: {exc}")
+            QMessageBox.critical(self, tr("Ошибка"), tr("Не удалось открыть папку с логами: {0}").format(exc))
 
     def _on_theme_clicked(self) -> None:
         """Переключает светлую/тёмную тему."""
@@ -599,7 +608,7 @@ class MainWindow(QMainWindow):
         QMessageBox.information(
             self,
             tr("Переключить язык"),
-            "Перезапустите приложение, чтобы применить новый язык." if lang == "ru" else "Restart the application to apply the new language.",
+            tr("Перезапустите приложение, чтобы применить новый язык.") if lang == "ru" else "Restart the application to apply the new language.",
         )
         logger.info("Переключён язык: %s", lang)
 
@@ -660,7 +669,7 @@ def show_exception_box(exc_type, exc_value, exc_tb) -> None:
     message = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
     logger.critical("Необработанное исключение: %s", message)
     try:
-        QMessageBox.critical(None, "Критическая ошибка", f"Произошла непредвиденная ошибка:\n{exc_value}")
+        QMessageBox.critical(None, tr("Критическая ошибка"), tr("Произошла непредвиденная ошибка:\n{0}").format(exc_value))
     except Exception:  # noqa: BLE001
         pass
 

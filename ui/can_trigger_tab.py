@@ -26,6 +26,7 @@ from core.can_protocol import pack_can_frame
 from core.serial_manager import SerialManager
 from models.config import Config
 from models.logger import get_logger
+from models.translations import _ as tr
 from models.utils import format_data_bytes, hex_to_int, int_to_hex, parse_data_bytes
 
 logger = get_logger(__name__)
@@ -43,7 +44,7 @@ class TriggerEditDialog(QDialog):
         """
         super().__init__(parent)
         self._trigger = trigger or {}
-        self.setWindowTitle("Триггер" if trigger is None else "Редактирование триггера")
+        self.setWindowTitle(tr("Триггер") if trigger is None else tr("Редактирование триггера"))
         self.setMinimumWidth(360)
         self._create_widgets()
         self._build_layout()
@@ -53,39 +54,39 @@ class TriggerEditDialog(QDialog):
         """Создаёт элементы диалога."""
         font = QFont("Segoe UI", 10)
 
-        self._active_check = QCheckBox("Активен")
+        self._active_check = QCheckBox(tr("Активен"))
         self._active_check.setFont(font)
 
         self._id_edit = QLineEdit()
         self._id_edit.setFont(font)
-        self._id_edit.setPlaceholderText("ID HEX")
+        self._id_edit.setPlaceholderText(tr("ID HEX"))
         self._id_edit.setMaxLength(8)
 
         self._data_edit = QLineEdit()
         self._data_edit.setFont(font)
-        self._data_edit.setPlaceholderText("D0 D1 D2 ...")
+        self._data_edit.setPlaceholderText(tr("D0 D1 D2 ..."))
 
         self._resp_id_edit = QLineEdit()
         self._resp_id_edit.setFont(font)
-        self._resp_id_edit.setPlaceholderText("ID HEX")
+        self._resp_id_edit.setPlaceholderText(tr("ID HEX"))
         self._resp_id_edit.setMaxLength(8)
 
         self._resp_data_edit = QLineEdit()
         self._resp_data_edit.setFont(font)
-        self._resp_data_edit.setPlaceholderText("D0 D1 D2 ...")
+        self._resp_data_edit.setPlaceholderText(tr("D0 D1 D2 ..."))
 
         self._delay_spin = QSpinBox()
         self._delay_spin.setRange(0, 10000)
         self._delay_spin.setValue(0)
-        self._delay_spin.setSuffix(" мс")
+        self._delay_spin.setSuffix(tr(" мс"))
         self._delay_spin.setFont(font)
 
-        self._save_button = QPushButton("Сохранить")
+        self._save_button = QPushButton(tr("Сохранить"))
         self._save_button.setFixedSize(100, 30)
         self._save_button.setFont(font)
         self._save_button.clicked.connect(self.accept)
 
-        self._cancel_button = QPushButton("Отмена")
+        self._cancel_button = QPushButton(tr("Отмена"))
         self._cancel_button.setFixedSize(100, 30)
         self._cancel_button.setFont(font)
         self._cancel_button.clicked.connect(self.reject)
@@ -96,15 +97,15 @@ class TriggerEditDialog(QDialog):
         layout.setSpacing(10)
         layout.setContentsMargins(16, 16, 16, 16)
         layout.addWidget(self._active_check)
-        layout.addWidget(QLabel("ID условия:"))
+        layout.addWidget(QLabel(tr("ID условия:")))
         layout.addWidget(self._id_edit)
-        layout.addWidget(QLabel("Данные условия:"))
+        layout.addWidget(QLabel(tr("Данные условия:")))
         layout.addWidget(self._data_edit)
-        layout.addWidget(QLabel("ID ответа:"))
+        layout.addWidget(QLabel(tr("ID ответа:")))
         layout.addWidget(self._resp_id_edit)
-        layout.addWidget(QLabel("Данные ответа:"))
+        layout.addWidget(QLabel(tr("Данные ответа:")))
         layout.addWidget(self._resp_data_edit)
-        layout.addWidget(QLabel("Задержка ответа:"))
+        layout.addWidget(QLabel(tr("Задержка ответа:")))
         layout.addWidget(self._delay_spin)
 
         buttons_layout = QHBoxLayout()
@@ -126,7 +127,7 @@ class TriggerEditDialog(QDialog):
         """Возвращает триггер из полей диалога."""
         can_id = hex_to_int(self._id_edit.text())
         if can_id is None:
-            QMessageBox.warning(self, "Ошибка", "Неверный ID условия")
+            QMessageBox.warning(self, tr("Ошибка"), tr("Неверный ID условия"))
             return None
         resp_id = hex_to_int(self._resp_id_edit.text())
         if resp_id is None:
@@ -166,13 +167,13 @@ class CanTriggerTab(QWidget):
         """Создаёт элементы управления страницы."""
         font = QFont("Segoe UI", 10)
 
-        self._title = QLabel("Триггеры CAN")
+        self._title = QLabel(tr("Триггеры CAN"))
         self._title.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
         self._title.setProperty("title", True)
 
         self._table = QTableWidget()
         self._table.setColumnCount(5)
-        self._table.setHorizontalHeaderLabels(["№", "Условие", "Действие", "Статус", "Срабатываний"])
+        self._table.setHorizontalHeaderLabels([tr("№"), tr("Условие"), tr("Действие"), tr("Статус"), tr("Срабатываний")])
         self._table.setFont(font)
         self._table.verticalHeader().setVisible(False)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -183,37 +184,37 @@ class CanTriggerTab(QWidget):
         self._table.setColumnWidth(3, 70)
         self._table.setColumnWidth(4, 90)
 
-        self._add_button = QPushButton("Добавить")
+        self._add_button = QPushButton(tr("Добавить"))
         self._add_button.setFixedSize(90, 28)
         self._add_button.setFont(font)
         self._add_button.clicked.connect(self._on_add)
 
-        self._edit_button = QPushButton("Редактировать")
+        self._edit_button = QPushButton(tr("Редактировать"))
         self._edit_button.setFixedSize(110, 28)
         self._edit_button.setFont(font)
         self._edit_button.clicked.connect(self._on_edit)
 
-        self._delete_button = QPushButton("Удалить")
+        self._delete_button = QPushButton(tr("Удалить"))
         self._delete_button.setFixedSize(90, 28)
         self._delete_button.setFont(font)
         self._delete_button.clicked.connect(self._on_delete)
 
-        self._apply_button = QPushButton("Применить")
+        self._apply_button = QPushButton(tr("Применить"))
         self._apply_button.setFixedSize(110, 30)
         self._apply_button.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
         self._apply_button.clicked.connect(self._apply_triggers)
 
-        self._stop_button = QPushButton("Остановить")
+        self._stop_button = QPushButton(tr("Остановить"))
         self._stop_button.setFixedSize(110, 30)
         self._stop_button.setFont(font)
         self._stop_button.clicked.connect(self._stop_triggers)
 
-        self._save_button = QPushButton("Сохранить в файл")
+        self._save_button = QPushButton(tr("Сохранить в файл"))
         self._save_button.setFixedSize(120, 28)
         self._save_button.setFont(font)
         self._save_button.clicked.connect(self._save_triggers_to_file)
 
-        self._load_button = QPushButton("Загрузить из файла")
+        self._load_button = QPushButton(tr("Загрузить из файла"))
         self._load_button.setFixedSize(130, 28)
         self._load_button.setFont(font)
         self._load_button.clicked.connect(self._load_triggers_from_file)
@@ -261,7 +262,7 @@ class CanTriggerTab(QWidget):
         self._table.setRowCount(len(self._triggers))
         for i, trigger in enumerate(self._triggers):
             active = trigger.get("active", False)
-            status = "Активен" if active else "Неактивен"
+            status = tr("Активен") if active else tr("Неактивен")
             condition = f"ID: {trigger.get('id', '-')} | {trigger.get('data', '')}"
             action = f"ID: {trigger.get('resp_id', '-')} | {trigger.get('resp_data', '')}"
             counter = self._trigger_counters[i] if i < len(self._trigger_counters) else 0
@@ -293,7 +294,7 @@ class CanTriggerTab(QWidget):
         """Открывает диалог редактирования выбранного триггера."""
         row = self._table.currentRow()
         if row < 0 or row >= len(self._triggers):
-            QMessageBox.warning(self, "Внимание", "Выберите триггер для редактирования")
+            QMessageBox.warning(self, tr("Внимание"), tr("Выберите триггер для редактирования"))
             return
         dialog = TriggerEditDialog(self._triggers[row], self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
@@ -307,7 +308,7 @@ class CanTriggerTab(QWidget):
         """Удаляет выбранный триггер."""
         row = self._table.currentRow()
         if row < 0 or row >= len(self._triggers):
-            QMessageBox.warning(self, "Внимание", "Выберите триггер для удаления")
+            QMessageBox.warning(self, tr("Внимание"), tr("Выберите триггер для удаления"))
             return
         del self._triggers[row]
         if row < len(self._trigger_counters):
@@ -348,13 +349,13 @@ class CanTriggerTab(QWidget):
         self._build_internal_triggers()
         self._active = True
         logger.info("Триггеры CAN применены: %d активных", len(self._internal_triggers))
-        QMessageBox.information(self, "Триггеры", "Триггеры применены и активны")
+        QMessageBox.information(self, tr("Триггеры"), tr("Триггеры применены и активны"))
 
     def _stop_triggers(self) -> None:
         """Останавливает обработку триггеров."""
         self._active = False
         logger.info("Обработка триггеров CAN остановлена")
-        QMessageBox.information(self, "Триггеры", "Обработка триггеров остановлена")
+        QMessageBox.information(self, tr("Триггеры"), tr("Обработка триггеров остановлена"))
 
     def _send_trigger_response(self, resp_frame: bytes) -> None:
         """Отправляет подготовленный ответный кадр."""
@@ -434,7 +435,7 @@ class CanTriggerTab(QWidget):
         """Сохраняет только набор триггеров в JSON-файл."""
         path, _ = QFileDialog.getSaveFileName(
             self,
-            "Сохранить триггеры",
+            tr("Сохранить триггеры"),
             "",
             "JSON files (*.json)",
         )
@@ -445,13 +446,13 @@ class CanTriggerTab(QWidget):
             logger.info("Триггеры сохранены в %s", path)
         except Exception as exc:  # noqa: BLE001
             logger.error("Ошибка сохранения триггеров: %s", exc)
-            QMessageBox.critical(self, "Ошибка", f"Не удалось сохранить триггеры: {exc}")
+            QMessageBox.critical(self, tr("Ошибка"), tr("Не удалось сохранить триггеры: {0}").format(exc))
 
     def _load_triggers_from_file(self) -> None:
         """Загружает набор триггеров из JSON-файла."""
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "Загрузить триггеры",
+            tr("Загрузить триггеры"),
             "",
             "JSON files (*.json)",
         )
@@ -460,9 +461,9 @@ class CanTriggerTab(QWidget):
         try:
             triggers = json.loads(Path(path).read_text(encoding="utf-8"))
             if not isinstance(triggers, list):
-                raise ValueError("Файл должен содержать список триггеров")
+                raise ValueError(tr("Файл должен содержать список триггеров"))
             self.set_config(triggers)
             logger.info("Триггеры загружены из %s", path)
         except Exception as exc:  # noqa: BLE001
             logger.error("Ошибка загрузки триггеров: %s", exc)
-            QMessageBox.critical(self, "Ошибка", f"Не удалось загрузить триггеры: {exc}")
+            QMessageBox.critical(self, tr("Ошибка"), tr("Не удалось загрузить триггеры: {0}").format(exc))

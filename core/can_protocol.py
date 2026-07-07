@@ -112,14 +112,14 @@ def unpack_can_frame(raw: bytes) -> Optional[Dict[str, object]]:
     return {"channel": channel, "id": can_id, "data": data, "extended": extended}
 
 
-def parse_all_frames(raw: bytes) -> List[Dict[str, object]]:
+def parse_all_frames(raw: bytes) -> tuple[List[Dict[str, object]], bytes]:
     """Извлекает все полные CAN-кадры из буфера.
 
     Args:
         raw: Байтовый буфер, накопленный из COM-порта.
 
     Returns:
-        Список распакованных кадров. Неполные данные игнорируются.
+        Кортеж: список распакованных кадров и оставшийся неполный буфер.
     """
     frames: List[Dict[str, object]] = []
     while True:
@@ -131,4 +131,4 @@ def parse_all_frames(raw: bytes) -> List[Dict[str, object]]:
         marker_index = raw.find(bytes([MARKER_RX_EXT])) if frame["extended"] else raw.find(bytes([MARKER_RX]))
         total_length = (8 if frame["extended"] else 6) + frame["data"].__len__()  # type: ignore[arg-type]
         raw = raw[marker_index + total_length :]
-    return frames
+    return frames, raw
