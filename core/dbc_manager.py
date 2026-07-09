@@ -4,7 +4,9 @@ import shutil
 from pathlib import Path
 from typing import Dict, Optional
 
-from core.dbc_parser import parse_dbc
+import cantools.database
+
+from core.dbc_parser import dbc_to_dict, load_dbc, parse_dbc
 from models.config import Config
 from models.logger import get_logger
 
@@ -32,6 +34,7 @@ class DBCManager:
         self._initialized = True
         self._config = Config()
         self._data: Dict[int, Dict[str, object]] = {}
+        self._cantools_db: Optional[cantools.database.Database] = None
         self._loaded_path: Optional[str] = None
         self._ensure_dir()
         self._load_last()
@@ -62,6 +65,7 @@ class DBCManager:
 
         try:
             data = parse_dbc(filepath)
+            db = load_dbc(filepath)
         except Exception as exc:  # noqa: BLE001
             logger.error("Ошибка парсинга DBC %s: %s", filepath, exc)
             return False
@@ -71,6 +75,7 @@ class DBCManager:
             return False
 
         self._data = data
+        self._cantools_db = db
         self._loaded_path = str(path)
         try:
             dest = DBC_DIR / path.name
@@ -82,6 +87,10 @@ class DBCManager:
         self._config.set("dbc_path", self._loaded_path)
         logger.info("Загружен DBC: %s (%d сообщений)", self._loaded_path, len(data))
         return True
+
+    def get_cantools_db(self) -> Optional[cantools.database.Database]:
+        """Возвращает загруженную базу cantools."""
+        return self._cantools_db
 
     def get_message(self, can_id: int) -> Optional[Dict[str, object]]:
         """Возвращает описание сообщения по ID."""

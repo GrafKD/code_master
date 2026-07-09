@@ -146,6 +146,10 @@ class CanAnalyzer(QWidget):
         self._start_time = 0.0
         self._duration = 0.0
 
+    def set_dbc(self, dbc_manager) -> None:
+        """Обновляет анализатор при смене DBC (заглушка)."""
+        pass
+
     def process_frame(self, frame: Dict[str, Any]) -> None:
         """Получает новый CAN-кадр и обновляет статистику.
 

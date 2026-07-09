@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from core.dbc_manager import DBCManager
 from core.serial_manager import SerialManager
 from core.update_checker import check_for_updates
 from models.config import Config
@@ -107,6 +108,13 @@ class MainWindow(QMainWindow):
         self._logs_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self._logs_button.clicked.connect(self._open_logs)
 
+        self._dbc_button = QPushButton("📄 " + tr("DBC"))
+        self._dbc_button.setFixedSize(80, 28)
+        self._dbc_button.setFont(font)
+        self._dbc_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._dbc_button.setToolTip(tr("Загрузить DBC-файл"))
+        self._dbc_button.clicked.connect(self._on_load_dbc)
+
         self._update_check_button = QPushButton("🔄")
         self._update_check_button.setFixedSize(36, 28)
         self._update_check_button.setFont(font)
@@ -171,6 +179,7 @@ class MainWindow(QMainWindow):
         top_layout.addWidget(self._theme_button)
         top_layout.addWidget(self._lang_button)
         top_layout.addWidget(self._logs_button)
+        top_layout.addWidget(self._dbc_button)
         top_layout.addWidget(self._update_check_button)
         top_layout.addWidget(self._exit_button)
         root.addWidget(self._top_panel)
@@ -309,6 +318,19 @@ class MainWindow(QMainWindow):
     def _set_theme_button_icon(self) -> None:
         """Обновляет иконку кнопки темы."""
         self._theme_button.setText("☾" if self._config.get("light_theme", False) else "☀")
+
+    def _on_load_dbc(self) -> None:
+        """Загружает DBC-файл и обновляет интерфейсы."""
+        path, _ = QFileDialog.getOpenFileName(self, tr("Загрузить DBC"), "", "DBC files (*.dbc)")
+        if not path:
+            return
+        dbc_manager = DBCManager()
+        if dbc_manager.load_dbc(path):
+            self._status_label.setText(tr("DBC загружен: {0}").format(path))
+            if self._settings_window is not None:
+                self._settings_window.set_dbc(dbc_manager)
+        else:
+            QMessageBox.critical(self, tr("Ошибка"), tr("Не удалось загрузить DBC"))
 
     def _on_check_updates_clicked(self) -> None:
         """Проверяет обновления."""

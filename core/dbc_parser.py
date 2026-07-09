@@ -1,8 +1,20 @@
-"""Простой парсер DBC-файлов (Vector CANdb++) для «Код Мастер»."""
+"""Парсер DBC-файлов для приложения «Код Мастер».
+
+Выбор библиотеки:
+- carbus-lib (импортируется как carbus_async) предоставляет низкоуровневый CAN/ISO-TP/UDS
+  транспорт, но не умеет парсить DBC-файлы и не имеет декодирования физических значений.
+- cantools умеет загружать DBC (Vector CANdb++), декодировать кадры в физические
+  значения, работать с factor/offset/единицами и перечислениями.
+
+Поэтому для парсинга DBC и декодирования CAN-данных выбрана библиотека cantools.
+carbus-lib оставлена в зависимостях для будущей работы с CAN-устройствами.
+"""
 
 import re
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
+
+import cantools
 
 from models.logger import get_logger
 from models.utils import hex_to_int
@@ -12,8 +24,11 @@ logger = get_logger(__name__)
 DBC_FILE_RE = re.compile(r"\.dbc$", re.IGNORECASE)
 
 
+# -----------------------------------------------------------------------------
+# Legacy-совместимый парсер (регулярными выражениями)
+# -----------------------------------------------------------------------------
+
 def _parse_int(text: str) -> Optional[int]:
-    """Парсит целое, включая HEX-строки."""
     value = hex_to_int(text)
     if value is not None:
         return value
@@ -24,7 +39,6 @@ def _parse_int(text: str) -> Optional[int]:
 
 
 def _parse_float(text: str) -> float:
-    """Парсит float, возвращает 0.0 при ошибке."""
     try:
         return float(text)
     except ValueError:
@@ -32,8 +46,6 @@ def _parse_float(text: str) -> float:
 
 
 def _parse_signal(line: str) -> Optional[Dict[str, object]]:
-    """Парсит одну строку сигнала SG_."""
-    # Пример: SG_ EngineSpeed : 0|16@1+ (0.25,0) [0|8000] "rpm" Vector__XXX
     match = re.match(
         r"\s*SG_\s+(\S+)\s*:\s*(\d+)\|(\d+)@(\d+)([+-])\s*\(([^,]+),([^)]+)\)\s*\[([^|]+)\|([^]]+)\]\s*\"([^\"]*)\"\s*.*",
         line,
@@ -45,7 +57,7 @@ def _parse_signal(line: str) -> Optional[Dict[str, object]]:
         "name": name,
         "start": int(start),
         "length": int(length),
-        "byte_order": int(byte_order),  # 1 = little endian, 0 = big endian
+        "byte_order": int(byte_order),
         "signed": signed == "-",
         "factor": _parse_float(factor),
         "offset": _parse_float(offset),
@@ -56,9 +68,7 @@ def _parse_signal(line: str) -> Optional[Dict[str, object]]:
     }
 
 
-def _extract_value_enum(line: str) -> Optional[Tuple[int, str, str, Dict[int, str]]]:
-    """Парсит строку VAL_ и возвращает (can_id, signal_name, raw_id, enum)."""
-    # Пример: VAL_ 123 EngineSpeed 0 "Off" 1 "On" ;
+def _extract_value_enum(line: str) -> Optional[Tuple[int, str, Dict[int, str]]]:
     match = re.match(r"VAL_\s+(\d+)\s+(\S+)\s+(.+);", line)
     if not match:
         return None
@@ -76,13 +86,9 @@ def _extract_value_enum(line: str) -> Optional[Tuple[int, str, str, Dict[int, st
 
 
 def parse_dbc(filepath: str) -> Dict[int, Dict[str, object]]:
-    """Читает DBC-файл и возвращает словарь сообщений.
+    """Читает DBC-файл через регулярные выражения и возвращает {can_id: {...}}.
 
-    Args:
-        filepath: Путь к .dbc файлу.
-
-    Returns:
-        Словарь {can_id: {"name": str, "dlc": int, "signals": [...]}}.
+    Оставлен для совместимости с компонентами, которые ожидают старый формат.
     """
     path = Path(filepath)
     if not path.exists():
@@ -91,6 +97,7 @@ def parse_dbc(filepath: str) -> Dict[int, Dict[str, object]]:
 
     messages: Dict[int, Dict[str, object]] = {}
     current_id: Optional[int] = None
+    value_enums: List[Tuple[int, str, Dict[int, str]]] = []
 
     try:
         text = path.read_text(encoding="utf-8", errors="ignore")
@@ -98,15 +105,12 @@ def parse_dbc(filepath: str) -> Dict[int, Dict[str, object]]:
         logger.error("Ошибка чтения DBC %s: %s", filepath, exc)
         return {}
 
-    value_enums: List[Tuple[int, str, Dict[int, str]]] = []
-
     for line in text.splitlines():
         line = line.strip()
         if not line:
             continue
 
         if line.startswith("BO_"):
-            # BO_ 123 MessageName: 8 Vector__XXX
             match = re.match(r"BO_\s+(\d+)\s+(\S+)\s*:\s*(\d+)\s+\S+", line)
             if match:
                 can_id = _parse_int(match.group(1))
@@ -129,7 +133,6 @@ def parse_dbc(filepath: str) -> Dict[int, Dict[str, object]]:
                 value_enums.append(enum)
             continue
 
-    # Применяем перечисления к сигналам
     for can_id, signal_name, values in value_enums:
         if can_id not in messages:
             continue
@@ -138,5 +141,95 @@ def parse_dbc(filepath: str) -> Dict[int, Dict[str, object]]:
                 signal["values"] = values
                 break
 
-    logger.info("DBC загружен: %d сообщений, %d сигналов", len(messages), sum(len(m["signals"]) for m in messages.values()))
+    logger.info("DBC (legacy) загружен: %d сообщений", len(messages))
     return messages
+
+
+# -----------------------------------------------------------------------------
+# Основной API на основе cantools
+# -----------------------------------------------------------------------------
+
+def load_dbc(filepath: str) -> Optional[cantools.db.Database]:
+    """Загружает DBC-файл через cantools.
+
+    Args:
+        filepath: Путь к .dbc файлу.
+
+    Returns:
+        Объект Database из cantools или None при ошибке.
+    """
+    path = Path(filepath)
+    if not path.exists():
+        logger.error("DBC файл не найден: %s", filepath)
+        return None
+    try:
+        db = cantools.database.load_file(str(path))
+        logger.info("DBC (cantools) загружен: %d сообщений", len(db.messages))
+        return db
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Ошибка загрузки DBC через cantools: %s", exc)
+        return None
+
+
+def decode_frame(db: cantools.db.Database, can_id: int, data: bytes) -> Optional[Dict[str, Any]]:
+    """Декодирует сырые CAN-данные в физические значения сигналов.
+
+    Args:
+        db: Загруженная база cantools.
+        can_id: CAN ID кадра.
+        data: Байты кадра (до 8 байт).
+
+    Returns:
+        Словарь {signal_name: physical_value} или None, если сообщение не найдено.
+    """
+    if db is None:
+        return None
+    try:
+        message = db.get_message_by_frame_id(can_id)
+    except KeyError:
+        return None
+    try:
+        decoded = message.decode(data)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Ошибка декодирования кадра 0x%X: %s", can_id, exc)
+        return None
+
+    result: Dict[str, Any] = {}
+    for signal_name, raw_value in decoded.items():
+        signal = message.get_signal_by_name(signal_name)
+        if signal is None:
+            result[signal_name] = raw_value
+            continue
+        phys = signal.scale * raw_value + signal.offset
+        unit = signal.unit or ""
+        result[signal_name] = {"value": phys, "unit": unit, "raw": raw_value}
+    return result
+
+
+def dbc_to_dict(db: cantools.db.Database) -> Dict[int, Dict[str, object]]:
+    """Преобразует базу cantools в формат словаря, совместимого с DBCManager."""
+    result: Dict[int, Dict[str, object]] = {}
+    if db is None:
+        return result
+    for message in db.messages:
+        result[message.frame_id] = {
+            "name": message.name,
+            "dlc": message.length,
+            "signals": [
+                {
+                    "name": s.name,
+                    "start": s.start,
+                    "length": s.length,
+                    "byte_order": 1 if s.byte_order == "little_endian" else 0,
+                    "signed": bool(s.is_signed),
+                    "factor": float(s.scale),
+                    "offset": float(s.offset),
+                    "min": float(s.minimum) if s.minimum is not None else 0.0,
+                    "max": float(s.maximum) if s.maximum is not None else 0.0,
+                    "unit": s.unit or "",
+                    "values": dict(s.choices) if s.choices else {},
+                }
+                for s in message.signals
+            ],
+        }
+    return result

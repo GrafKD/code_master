@@ -21,7 +21,7 @@ from models.logger import get_logger
 from models.translations import _ as tr
 from ui.can_analyzer import CanAnalyzer
 from ui.can_gateway_tab import CanGatewayTab
-from ui.can_graph_tab import CanGraphTab
+from ui.signal_graph_tab import SignalGraphTab
 from ui.can_monitor_tab import CanMonitorTab
 from ui.can_trigger_tab import CanTriggerTab
 from ui.flexible_logic_tab import FlexibleLogicTab
@@ -55,7 +55,7 @@ class SettingsWindow(QMainWindow):
         self._gateway_tab = CanGatewayTab(self._serial_manager, self)
         self._flexible_tab = FlexibleLogicTab(self._serial_manager, self)
         self._library_tab = LibraryBrowser(self._trigger_tab, self._flexible_tab, self)
-        self._graph_tab = CanGraphTab(self._serial_manager, self)
+        self._graph_tab = SignalGraphTab(self._serial_manager, self)
         self._analyzer_tab = CanAnalyzer(self._serial_manager, self)
 
         self._tabs.addTab(self._trigger_tab, "⚡ " + tr("Триггеры"))
@@ -63,7 +63,7 @@ class SettingsWindow(QMainWindow):
         self._tabs.addTab(self._gateway_tab, "🚦 " + tr("Шлюз"))
         self._tabs.addTab(self._flexible_tab, "🧩 " + tr("Гибкая логика"))
         self._tabs.addTab(self._library_tab, "📚 " + tr("Библиотека"))
-        self._tabs.addTab(self._graph_tab, "📈 " + tr("График"))
+        self._tabs.addTab(self._graph_tab, "📈 " + tr("Графики"))
         self._tabs.addTab(self._analyzer_tab, "🔬 " + tr("Анализатор"))
 
         layout.addWidget(self._tabs, 1)
@@ -137,6 +137,18 @@ class SettingsWindow(QMainWindow):
             QMessageBox.information(self, tr("Готово"), tr("Конфигурация загружена"))
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, tr("Ошибка"), tr("Не удалось загрузить: {0}").format(exc))
+
+    def set_dbc(self, dbc_manager) -> None:
+        """Уведомляет все вкладки о смене загруженного DBC."""
+        for tab in (
+            self._trigger_tab,
+            self._monitor_tab,
+            self._flexible_tab,
+            self._graph_tab,
+            self._analyzer_tab,
+        ):
+            if hasattr(tab, "set_dbc"):
+                tab.set_dbc(dbc_manager)
 
     def closeEvent(self, event) -> None:  # noqa: N802
         logger.info("Закрыто окно настроек")

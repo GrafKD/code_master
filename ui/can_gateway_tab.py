@@ -2,6 +2,7 @@
 
 from typing import Optional
 
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
@@ -17,5 +18,5 @@ class CanGatewayTab(QWidget):
         layout = QVBoxLayout(self)
         label = QLabel(tr("Страница CAN-шлюза в разработке"))
         label.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
-        label.setAlignment(0x0004 | 0x0080)
+        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(label)

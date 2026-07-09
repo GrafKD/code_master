@@ -2,12 +2,13 @@
 
 import json
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QFileDialog,
     QGridLayout,
     QGroupBox,
@@ -23,6 +24,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.can_protocol import pack_can_frame
+from core.dbc_manager import DBCManager
 from core.serial_manager import SerialManager
 from models.config import Config
 from models.logger import get_logger
@@ -32,6 +34,7 @@ from models.utils import hex_to_int, int_to_hex, parse_data_bytes
 logger = get_logger(__name__)
 
 TRIGGER_COUNT = 10
+ACTIONS = [tr("Одиночная отправка"), tr("Запустить циклическую"), tr("Остановить циклическую")]
 
 
 class CanTriggerTab(QWidget):
@@ -41,14 +44,16 @@ class CanTriggerTab(QWidget):
         super().__init__(parent)
         self._serial_manager = serial_manager
         self._config = Config()
+        self._dbc_manager = DBCManager()
         self._active = False
         self._internal_triggers: List[Dict[str, object]] = []
         self._trigger_counters = [0] * TRIGGER_COUNT
-        self._blocks: List[Dict[str, QWidget]] = []
+        self._blocks: List[Dict[str, Any]] = []
 
         self._create_widgets()
         self._build_layout()
         self._load_config()
+        self._refresh_dbc_signals()
 
     def _create_widgets(self) -> None:
         font = QFont("Segoe UI", 9)
@@ -74,16 +79,13 @@ class CanTriggerTab(QWidget):
             id_edit.setPlaceholderText(tr("ID"))
 
             data_edits = []
-            data_layout = QHBoxLayout()
-            data_layout.setSpacing(4)
             for d in range(8):
                 edit = QLineEdit()
-                edit.setFixedWidth(34)
+                edit.setFixedWidth(30)
                 edit.setFont(font)
                 edit.setMaxLength(2)
                 edit.setPlaceholderText(f"D{d}")
                 data_edits.append(edit)
-                data_layout.addWidget(edit)
 
             resp_id_edit = QLineEdit()
             resp_id_edit.setFixedWidth(80)
@@ -92,16 +94,13 @@ class CanTriggerTab(QWidget):
             resp_id_edit.setPlaceholderText(tr("ID отв."))
 
             resp_data_edits = []
-            resp_data_layout = QHBoxLayout()
-            resp_data_layout.setSpacing(4)
             for d in range(8):
                 edit = QLineEdit()
-                edit.setFixedWidth(34)
+                edit.setFixedWidth(30)
                 edit.setFont(font)
                 edit.setMaxLength(2)
                 edit.setPlaceholderText(f"D{d}")
                 resp_data_edits.append(edit)
-                resp_data_layout.addWidget(edit)
 
             delay_spin = QSpinBox()
             delay_spin.setRange(0, 10000)
@@ -109,6 +108,22 @@ class CanTriggerTab(QWidget):
             delay_spin.setSuffix(tr(" мс"))
             delay_spin.setFont(font)
             delay_spin.setFixedWidth(90)
+            delay_spin.setToolTip(tr("Задержка перед ответом или интервал циклической отправки"))
+
+            action_combo = QComboBox()
+            action_combo.setFont(font)
+            action_combo.addItems(ACTIONS)
+            action_combo.setFixedWidth(160)
+
+            signal_combo = QComboBox()
+            signal_combo.setFont(font)
+            signal_combo.setFixedWidth(180)
+            signal_combo.setPlaceholderText(tr("Сигнал из DBC"))
+            signal_combo.setEnabled(False)
+            signal_combo.currentIndexChanged.connect(lambda idx, idx_b=i: self._on_signal_selected(idx_b))
+
+            cyclic_timer = QTimer(self)
+            cyclic_timer.timeout.connect(lambda idx=i: self._send_cyclic_response(idx))
 
             top = QHBoxLayout()
             top.addWidget(active)
@@ -117,31 +132,37 @@ class CanTriggerTab(QWidget):
             top.addWidget(test_btn)
 
             condition = QHBoxLayout()
-            condition.setSpacing(6)
+            condition.setSpacing(4)
             condition.addWidget(QLabel(tr("ID:")))
             condition.addWidget(id_edit)
             condition.addWidget(QLabel(tr("Данные:")))
-            condition.addLayout(data_layout)
+            for edit in data_edits:
+                condition.addWidget(edit)
             condition.addStretch()
 
             response = QHBoxLayout()
-            response.setSpacing(6)
+            response.setSpacing(4)
             response.addWidget(QLabel(tr("ID отв.:")))
             response.addWidget(resp_id_edit)
             response.addWidget(QLabel(tr("Данные отв.:")))
-            response.addLayout(resp_data_layout)
+            for edit in resp_data_edits:
+                response.addWidget(edit)
             response.addStretch()
 
-            delay_layout = QHBoxLayout()
-            delay_layout.addWidget(QLabel(tr("Задержка:")))
-            delay_layout.addWidget(delay_spin)
-            delay_layout.addStretch()
+            options = QHBoxLayout()
+            options.addWidget(QLabel(tr("Задержка:")))
+            options.addWidget(delay_spin)
+            options.addWidget(QLabel(tr("Действие:")))
+            options.addWidget(action_combo)
+            options.addWidget(QLabel(tr("Сигнал:")))
+            options.addWidget(signal_combo)
+            options.addStretch()
 
             layout = QVBoxLayout(group)
             layout.addLayout(top)
             layout.addLayout(condition)
             layout.addLayout(response)
-            layout.addLayout(delay_layout)
+            layout.addLayout(options)
 
             self._blocks.append({
                 "group": group,
@@ -152,6 +173,10 @@ class CanTriggerTab(QWidget):
                 "resp_id_edit": resp_id_edit,
                 "resp_data_edits": resp_data_edits,
                 "delay_spin": delay_spin,
+                "action_combo": action_combo,
+                "signal_combo": signal_combo,
+                "cyclic_timer": cyclic_timer,
+                "cyclic_running": False,
             })
 
         self._apply_button = QPushButton(tr("Применить триггеры"))
@@ -220,6 +245,7 @@ class CanTriggerTab(QWidget):
             for d, edit in enumerate(block["resp_data_edits"]):
                 edit.setText(f"{resp_data[d]:02X}" if d < len(resp_data) else "")
             block["delay_spin"].setValue(int(trigger.get("delay", 0)))
+            block["action_combo"].setCurrentIndex(int(trigger.get("action", 0)))
         self._trigger_counters = [0] * TRIGGER_COUNT
         self._update_counter_labels()
 
@@ -237,6 +263,7 @@ class CanTriggerTab(QWidget):
                 "resp_id": resp_id,
                 "resp_data": resp_data,
                 "delay": block["delay_spin"].value(),
+                "action": block["action_combo"].currentIndex(),
             })
         self._config.set("triggers", triggers)
 
@@ -264,9 +291,11 @@ class CanTriggerTab(QWidget):
                 "resp_id": resp_id,
                 "resp_data": resp_data,
                 "delay": block["delay_spin"].value(),
+                "action": block["action_combo"].currentIndex(),
             })
 
     def _apply_triggers(self) -> None:
+        self._stop_all_cyclic()
         self._save_config()
         self._build_internal_triggers()
         self._active = True
@@ -277,8 +306,14 @@ class CanTriggerTab(QWidget):
 
     def _stop_triggers(self) -> None:
         self._active = False
+        self._stop_all_cyclic()
         logger.info("Обработка триггеров CAN остановлена")
         QMessageBox.information(self, tr("Триггеры"), tr("Обработка триггеров остановлена"))
+
+    def _stop_all_cyclic(self) -> None:
+        for block in self._blocks:
+            block["cyclic_timer"].stop()
+            block["cyclic_running"] = False
 
     def _on_test(self, index: int) -> None:
         block = self._blocks[index]
@@ -295,10 +330,54 @@ class CanTriggerTab(QWidget):
         self._trigger_counters[index] += 1
         self._update_counter_labels()
 
-    def _send_trigger_response(self, resp_frame: bytes) -> None:
+    def _send_cyclic_response(self, index: int) -> None:
+        block = self._blocks[index]
+        can_id = hex_to_int(block["resp_id_edit"].text()) or 0
+        resp_data = parse_data_bytes([edit.text() for edit in block["resp_data_edits"] if edit.text().strip()])
+        frame = pack_can_frame(1, can_id, bytes(resp_data))
+        self._serial_manager.send_data(frame)
+
+    def _send_response(self, index: int, resp_frame: bytes) -> None:
         self._serial_manager.send_data(resp_frame)
 
-    def process_frame(self, frame: Dict[str, object]) -> None:
+    def _on_signal_selected(self, index: int) -> None:
+        block = self._blocks[index]
+        combo = block["signal_combo"]
+        if combo.currentIndex() <= 0:
+            return
+        data = combo.currentData()
+        if not data:
+            return
+        db = self._dbc_manager.get_cantools_db()
+        if db is None:
+            return
+        try:
+            message = db.get_message_by_name(data["message"])
+            encoded = message.encode({data["signal"]: 0})
+            block["id_edit"].setText(int_to_hex(message.frame_id, 8 if message.frame_id > 0x7FF else 3))
+            for d, edit in enumerate(block["data_edits"]):
+                edit.setText(f"{encoded[d]:02X}" if d < len(encoded) else "")
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Ошибка автозаполнения сигнала DBC: %s", exc)
+            QMessageBox.warning(self, tr("Ошибка"), tr("Не удалось закодировать сигнал: {0}").format(exc))
+
+    def _refresh_dbc_signals(self) -> None:
+        db = self._dbc_manager.get_cantools_db()
+        for block in self._blocks:
+            combo = block["signal_combo"]
+            combo.blockSignals(True)
+            combo.clear()
+            combo.addItem("—")
+            if db is not None:
+                for message in db.messages:
+                    for signal in message.signals:
+                        combo.addItem(f"{message.name}::{signal.name}", {"message": message.name, "signal": signal.name})
+                combo.setEnabled(True)
+            else:
+                combo.setEnabled(False)
+            combo.blockSignals(False)
+
+    def process_frame(self, frame: Dict[str, Any]) -> None:
         if not self._active or not self._internal_triggers:
             return
         frame_id = int(frame["id"])
@@ -315,16 +394,28 @@ class CanTriggerTab(QWidget):
             self._trigger_counters[idx] += 1
             block = self._blocks[idx]
             block["counter"].setText(tr("Срабатываний: {0}").format(self._trigger_counters[idx]))
+            action = int(trigger.get("action", 0))
+            delay_ms = int(trigger.get("delay", 0))
+            if action == 2:
+                block["cyclic_timer"].stop()
+                block["cyclic_running"] = False
+                continue
+            if action == 1:
+                if not block["cyclic_running"] or delay_ms > 0:
+                    block["cyclic_timer"].stop()
+                    block["cyclic_timer"].setInterval(max(1, delay_ms))
+                    block["cyclic_timer"].start()
+                    block["cyclic_running"] = True
+                continue
             resp_frame = pack_can_frame(
                 int(frame["channel"]),
                 trigger["resp_id"],
                 bytes(trigger["resp_data"]),
             )
-            delay_ms = trigger.get("delay", 0)
             if delay_ms > 0:
-                QTimer.singleShot(delay_ms, lambda rf=resp_frame: self._send_trigger_response(rf))
+                QTimer.singleShot(delay_ms, lambda rf=resp_frame: self._send_response(idx, rf))
             else:
-                self._send_trigger_response(resp_frame)
+                self._send_response(idx, resp_frame)
             logger.info(
                 "Сработал триггер %d: ID=0x%s -> ответ ID=0x%s (задержка %d мс)",
                 idx + 1,
@@ -343,7 +434,7 @@ class CanTriggerTab(QWidget):
         self._config.set("triggers", triggers)
         self._load_config()
 
-    def create_trigger_from_packet(self, packet: Dict[str, object]) -> None:
+    def create_trigger_from_packet(self, packet: Dict[str, Any]) -> None:
         """Создаёт триггер из пакета мониторинга."""
         for i, block in enumerate(self._blocks):
             if block["id_edit"].text().strip():
@@ -358,6 +449,10 @@ class CanTriggerTab(QWidget):
             self._apply_triggers()
             return
         QMessageBox.warning(self, tr("Внимание"), tr("Все 10 триггеров заняты"))
+
+    def set_dbc(self, dbc) -> None:
+        """Уведомляет вкладку о смене DBC."""
+        self._refresh_dbc_signals()
 
     def _save_triggers_to_file(self) -> None:
         path, _ = QFileDialog.getSaveFileName(self, tr("Сохранить триггеры"), "", "JSON files (*.json)")

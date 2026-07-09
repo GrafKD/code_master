@@ -254,7 +254,19 @@ class SerialManager(QObject):
 
     def __del__(self) -> None:
         """Гарантирует закрытие порта при удалении менеджера."""
-        self.close_port()
+        self._closing = True
+        try:
+            if self._reader is not None:
+                self._reader.stop()
+                self._reader = None
+        except Exception:  # noqa: S110
+            pass
+        try:
+            if self._port is not None:
+                self._port.close()
+                self._port = None
+        except Exception:  # noqa: S110
+            pass
 
     def _on_reader_finished(self) -> None:
         """Вызывается при завершении потока чтения; планирует переподключение."""

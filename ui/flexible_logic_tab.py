@@ -408,6 +408,10 @@ class FlexibleLogicTab(QWidget):
         """Отправляет подготовленный ответный кадр."""
         self._serial_manager.send_data(resp_frame)
 
+    def set_dbc(self, dbc_manager) -> None:
+        """Обновляет логику при смене DBC (заглушка)."""
+        pass
+
     def process_frame(self, frame: Dict[str, object]) -> None:
         """Проверяет входящий кадр на совпадение с активными правилами."""
         if not self._active:
