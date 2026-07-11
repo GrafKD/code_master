@@ -9,6 +9,7 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QFont, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
+    QComboBox,
     QDialog,
     QHBoxLayout,
     QLabel,
@@ -63,7 +64,7 @@ class MainWindow(QMainWindow):
         self._connect_signals()
         self._setup_shortcuts()
         self._set_theme_button_icon()
-        self._set_lang_button_text()
+        self._set_language_combo()
         self._update_port_indicator()
 
     def _create_widgets(self) -> None:
@@ -95,12 +96,18 @@ class MainWindow(QMainWindow):
         self._theme_button.setToolTip(tr("Переключить светлую/тёмную тему"))
         self._theme_button.clicked.connect(self._on_theme_clicked)
 
-        self._lang_button = QPushButton("EN")
-        self._lang_button.setFixedSize(40, 28)
-        self._lang_button.setFont(font)
-        self._lang_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._lang_button.setToolTip(tr("Переключить язык"))
-        self._lang_button.clicked.connect(self._on_language_clicked)
+        self._language_combo = QComboBox()
+        self._language_combo.setFixedSize(110, 28)
+        self._language_combo.setFont(font)
+        self._language_combo.addItem(tr("Русский"), "ru")
+        self._language_combo.addItem(tr("English"), "en")
+        self._language_combo.currentIndexChanged.connect(self._on_language_changed)
+
+        self._top_update_button = QPushButton("🔄 " + tr("Обновить Код Мастер"))
+        self._top_update_button.setFixedHeight(28)
+        self._top_update_button.setFont(font)
+        self._top_update_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._top_update_button.clicked.connect(self._on_update_clicked)
 
         self._logs_button = QPushButton("📄 " + tr("Логи"))
         self._logs_button.setFixedSize(80, 28)
@@ -128,21 +135,23 @@ class MainWindow(QMainWindow):
         self._exit_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self._exit_button.clicked.connect(self.close)
 
-        # Главное меню с двумя карточками
-        self._central_stack = QStackedWidget()
-
-        self._startup_page = QWidget()
+        # Маленькие кнопки в правом верхнем углу
         self._update_button = QPushButton("🔄 " + tr("Обновить"))
-        self._update_button.setFixedSize(200, 80)
-        self._update_button.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
+        self._update_button.setFixedSize(90, 28)
+        self._update_button.setFont(font)
         self._update_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self._update_button.clicked.connect(self._on_update_clicked)
 
         self._configure_button = QPushButton("⚙️ " + tr("Настроить"))
-        self._configure_button.setFixedSize(200, 80)
-        self._configure_button.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
+        self._configure_button.setFixedSize(100, 28)
+        self._configure_button.setFont(font)
         self._configure_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self._configure_button.clicked.connect(self._on_configure_clicked)
+
+        # Главное меню
+        self._central_stack = QStackedWidget()
+
+        self._startup_page = QWidget()
 
         # Страница прошивки
         self._firmware_page = FirmwarePage(self._serial_manager, self)
@@ -169,18 +178,22 @@ class MainWindow(QMainWindow):
         root.setContentsMargins(0, 0, 0, 0)
 
         top_layout = QHBoxLayout(self._top_panel)
-        top_layout.setContentsMargins(12, 0, 12, 0)
+        top_layout.setContentsMargins(12, 0, 20, 0)
         top_layout.setSpacing(10)
         top_layout.addWidget(self._logo_label)
+        top_layout.addWidget(self._language_combo)
+        top_layout.addWidget(self._top_update_button)
         top_layout.addStretch()
         top_layout.addWidget(self._port_indicator)
         top_layout.addWidget(self._port_label)
         top_layout.addSpacing(10)
         top_layout.addWidget(self._theme_button)
-        top_layout.addWidget(self._lang_button)
         top_layout.addWidget(self._logs_button)
         top_layout.addWidget(self._dbc_button)
         top_layout.addWidget(self._update_check_button)
+        top_layout.addSpacing(12)
+        top_layout.addWidget(self._update_button)
+        top_layout.addWidget(self._configure_button)
         top_layout.addWidget(self._exit_button)
         root.addWidget(self._top_panel)
 
@@ -197,14 +210,6 @@ class MainWindow(QMainWindow):
         subtitle.setFont(QFont("Segoe UI", 12))
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         startup_layout.addWidget(subtitle)
-        startup_layout.addStretch(1)
-        buttons_layout = QHBoxLayout()
-        buttons_layout.setSpacing(24)
-        buttons_layout.addStretch()
-        buttons_layout.addWidget(self._update_button)
-        buttons_layout.addWidget(self._configure_button)
-        buttons_layout.addStretch()
-        startup_layout.addLayout(buttons_layout)
         startup_layout.addStretch(2)
 
         firmware_container = QWidget()
@@ -299,21 +304,26 @@ class MainWindow(QMainWindow):
             apply_dark_theme(app)
             self._theme_button.setText("☀")
 
-    def _on_language_clicked(self) -> None:
-        """Переключает язык."""
-        lang = "en" if self._config.get("language", "ru") == "ru" else "ru"
+    def _on_language_changed(self, index: int) -> None:
+        """Переключает язык через выпадающий список."""
+        lang = self._language_combo.itemData(index)
+        if lang is None:
+            return
         self._config.set("language", lang)
         set_language(lang)
-        self._set_lang_button_text()
         QMessageBox.information(
             self,
             tr("Переключить язык"),
-            tr("Перезапустите приложение, чтобы применить новый язык.") if lang == "ru" else "Restart the application to apply the new language.",
+            tr("Перезапустите приложение, чтобы применить новый язык."),
         )
 
-    def _set_lang_button_text(self) -> None:
-        """Обновляет текст кнопки языка."""
-        self._lang_button.setText("RU" if self._config.get("language", "ru") == "en" else "EN")
+    def _set_language_combo(self) -> None:
+        """Устанавливает текущий язык в выпадающем списке."""
+        current = self._config.get("language", "ru")
+        for idx in range(self._language_combo.count()):
+            if self._language_combo.itemData(idx) == current:
+                self._language_combo.setCurrentIndex(idx)
+                break
 
     def _set_theme_button_icon(self) -> None:
         """Обновляет иконку кнопки темы."""

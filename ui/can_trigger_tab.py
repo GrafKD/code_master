@@ -1,4 +1,4 @@
-"""Страница «Триггеры» с 10 независимыми блоками условий и ответов."""
+"""Страница «Триггеры» с 10 расширенными блоками условий и ответов."""
 
 import json
 from pathlib import Path
@@ -10,7 +10,6 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFileDialog,
-    QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -24,7 +23,6 @@ from PySide6.QtWidgets import (
 )
 
 from core.can_protocol import pack_can_frame
-from core.dbc_manager import DBCManager
 from core.serial_manager import SerialManager
 from models.config import Config
 from models.logger import get_logger
@@ -34,17 +32,19 @@ from models.utils import hex_to_int, int_to_hex, parse_data_bytes
 logger = get_logger(__name__)
 
 TRIGGER_COUNT = 10
-ACTIONS = [tr("Одиночная отправка"), tr("Запустить циклическую"), tr("Остановить циклическую")]
+EXTRA_ROWS = 5
+CACHE_ROWS = 5
+CHANNELS = [tr("CAN1"), tr("CAN2"), tr("CAN1 и CAN2")]
+BIT_RATES = [tr("29 бит"), tr("11 бит")]
 
 
 class CanTriggerTab(QWidget):
-    """Страница управления триггерами CAN с 10 блоками."""
+    """Страница управления триггерами CAN."""
 
     def __init__(self, serial_manager: SerialManager, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self._serial_manager = serial_manager
         self._config = Config()
-        self._dbc_manager = DBCManager()
         self._active = False
         self._internal_triggers: List[Dict[str, object]] = []
         self._trigger_counters = [0] * TRIGGER_COUNT
@@ -53,16 +53,99 @@ class CanTriggerTab(QWidget):
         self._create_widgets()
         self._build_layout()
         self._load_config()
-        self._refresh_dbc_signals()
+
+    def _make_id_edit(self, font: QFont, placeholder: str = "ID") -> QLineEdit:
+        edit = QLineEdit()
+        edit.setFixedWidth(80)
+        edit.setFont(font)
+        edit.setMaxLength(8)
+        edit.setPlaceholderText(placeholder)
+        return edit
+
+    def _make_data_edits(self, font: QFont) -> List[QLineEdit]:
+        edits: List[QLineEdit] = []
+        for d in range(8):
+            edit = QLineEdit()
+            edit.setFixedWidth(30)
+            edit.setFont(font)
+            edit.setMaxLength(2)
+            edit.setPlaceholderText(f"D{d}")
+            edits.append(edit)
+        return edits
+
+    def _make_channel_combo(self, font: QFont) -> QComboBox:
+        combo = QComboBox()
+        combo.setFont(font)
+        combo.addItems(CHANNELS)
+        combo.setFixedWidth(110)
+        return combo
+
+    def _make_count_spin(self, font: QFont, max_value: int) -> QSpinBox:
+        spin = QSpinBox()
+        spin.setRange(0, max_value)
+        spin.setValue(1)
+        spin.setSuffix(tr(" шт"))
+        spin.setFont(font)
+        spin.setFixedWidth(70)
+        return spin
+
+    def _make_row_widget(
+        self,
+        font: QFont,
+        label: str,
+        max_count: int,
+    ) -> Dict[str, Any]:
+        layout = QHBoxLayout()
+        layout.setSpacing(4)
+        layout.addWidget(QLabel(label))
+        channel = self._make_channel_combo(font)
+        layout.addWidget(channel)
+        layout.addWidget(QLabel("ID:"))
+        can_id = self._make_id_edit(font)
+        layout.addWidget(can_id)
+        layout.addWidget(QLabel("Data:"))
+        data = self._make_data_edits(font)
+        for edit in data:
+            layout.addWidget(edit)
+        count = self._make_count_spin(font, max_count)
+        layout.addWidget(count)
+        layout.addStretch()
+        return {
+            "layout": layout,
+            "channel": channel,
+            "id": can_id,
+            "data": data,
+            "count": count,
+        }
 
     def _create_widgets(self) -> None:
         font = QFont("Segoe UI", 9)
+
+        self._apply_button = QPushButton(tr("Применить триггеры"))
+        self._apply_button.setFixedSize(140, 32)
+        self._apply_button.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
+        self._apply_button.clicked.connect(self._apply_triggers)
+
+        self._save_button = QPushButton(tr("Сохранить триггеры"))
+        self._save_button.setFixedSize(140, 32)
+        self._save_button.setFont(QFont("Segoe UI", 10))
+        self._save_button.clicked.connect(self._save_triggers)
+
+        self._load_button = QPushButton(tr("Загрузить триггеры"))
+        self._load_button.setFixedSize(150, 32)
+        self._load_button.setFont(QFont("Segoe UI", 10))
+        self._load_button.clicked.connect(self._load_triggers)
+
         for i in range(TRIGGER_COUNT):
             group = QGroupBox(tr("Триггер {0}").format(i + 1))
             group.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
 
             active = QCheckBox(tr("Активен"))
             active.setFont(font)
+
+            cache = QCheckBox(tr("Автоматическая запись Data в Кэш"))
+            cache.setFont(font)
+            cache.stateChanged.connect(lambda state, idx=i: self._on_cache_changed(idx, state))
 
             counter = QLabel(tr("Срабатываний: 0"))
             counter.setFont(font)
@@ -72,400 +155,315 @@ class CanTriggerTab(QWidget):
             test_btn.setFont(font)
             test_btn.clicked.connect(lambda _=False, idx=i: self._on_test(idx))
 
-            id_edit = QLineEdit()
-            id_edit.setFixedWidth(80)
-            id_edit.setFont(font)
-            id_edit.setMaxLength(8)
-            id_edit.setPlaceholderText(tr("ID"))
+            bit_combo = QComboBox()
+            bit_combo.setFont(font)
+            bit_combo.addItems(BIT_RATES)
+            bit_combo.setFixedWidth(90)
 
-            data_edits = []
-            for d in range(8):
-                edit = QLineEdit()
-                edit.setFixedWidth(30)
-                edit.setFont(font)
-                edit.setMaxLength(2)
-                edit.setPlaceholderText(f"D{d}")
-                data_edits.append(edit)
+            data_from = QLineEdit()
+            data_from.setFixedWidth(30)
+            data_from.setFont(font)
+            data_from.setMaxLength(2)
+            data_from.setPlaceholderText(tr("от"))
 
-            resp_id_edit = QLineEdit()
-            resp_id_edit.setFixedWidth(80)
-            resp_id_edit.setFont(font)
-            resp_id_edit.setMaxLength(8)
-            resp_id_edit.setPlaceholderText(tr("ID отв."))
+            data_to = QLineEdit()
+            data_to.setFixedWidth(30)
+            data_to.setFont(font)
+            data_to.setMaxLength(2)
+            data_to.setPlaceholderText(tr("до"))
 
-            resp_data_edits = []
-            for d in range(8):
-                edit = QLineEdit()
-                edit.setFixedWidth(30)
-                edit.setFont(font)
-                edit.setMaxLength(2)
-                edit.setPlaceholderText(f"D{d}")
-                resp_data_edits.append(edit)
+            recv_row = self._make_row_widget(font, tr("Приём"), 64)
+            resp_row = self._make_row_widget(font, tr("Ответ"), 64)
+            resp_row["count"].setRange(1, 64)
+            resp_row["count"].setValue(1)
 
-            delay_spin = QSpinBox()
-            delay_spin.setRange(0, 10000)
-            delay_spin.setValue(0)
-            delay_spin.setSuffix(tr(" мс"))
-            delay_spin.setFont(font)
-            delay_spin.setFixedWidth(90)
-            delay_spin.setToolTip(tr("Задержка перед ответом или интервал циклической отправки"))
+            packet_count = QSpinBox()
+            packet_count.setRange(1, 64)
+            packet_count.setValue(1)
+            packet_count.setSuffix(tr(" шт"))
+            packet_count.setFont(font)
+            packet_count.setFixedWidth(80)
 
-            action_combo = QComboBox()
-            action_combo.setFont(font)
-            action_combo.addItems(ACTIONS)
-            action_combo.setFixedWidth(160)
+            extra_rows: List[Dict[str, Any]] = []
+            for _ in range(EXTRA_ROWS):
+                extra_rows.append(self._make_row_widget(font, "", 64))
 
-            signal_combo = QComboBox()
-            signal_combo.setFont(font)
-            signal_combo.setFixedWidth(180)
-            signal_combo.setPlaceholderText(tr("Сигнал из DBC"))
-            signal_combo.setEnabled(False)
-            signal_combo.currentIndexChanged.connect(lambda idx, idx_b=i: self._on_signal_selected(idx_b))
+            cache_rows: List[Dict[str, Any]] = []
+            for _ in range(CACHE_ROWS):
+                cache_rows.append(self._make_row_widget(font, "", 0))
 
-            cyclic_timer = QTimer(self)
-            cyclic_timer.timeout.connect(lambda idx=i: self._send_cyclic_response(idx))
-
-            top = QHBoxLayout()
-            top.addWidget(active)
-            top.addStretch()
-            top.addWidget(counter)
-            top.addWidget(test_btn)
-
-            condition = QHBoxLayout()
-            condition.setSpacing(4)
-            condition.addWidget(QLabel(tr("ID:")))
-            condition.addWidget(id_edit)
-            condition.addWidget(QLabel(tr("Данные:")))
-            for edit in data_edits:
-                condition.addWidget(edit)
-            condition.addStretch()
-
-            response = QHBoxLayout()
-            response.setSpacing(4)
-            response.addWidget(QLabel(tr("ID отв.:")))
-            response.addWidget(resp_id_edit)
-            response.addWidget(QLabel(tr("Данные отв.:")))
-            for edit in resp_data_edits:
-                response.addWidget(edit)
-            response.addStretch()
-
-            options = QHBoxLayout()
-            options.addWidget(QLabel(tr("Задержка:")))
-            options.addWidget(delay_spin)
-            options.addWidget(QLabel(tr("Действие:")))
-            options.addWidget(action_combo)
-            options.addWidget(QLabel(tr("Сигнал:")))
-            options.addWidget(signal_combo)
-            options.addStretch()
-
-            layout = QVBoxLayout(group)
-            layout.addLayout(top)
-            layout.addLayout(condition)
-            layout.addLayout(response)
-            layout.addLayout(options)
-
-            self._blocks.append({
+            block = {
                 "group": group,
                 "active": active,
+                "cache": cache,
                 "counter": counter,
-                "id_edit": id_edit,
-                "data_edits": data_edits,
-                "resp_id_edit": resp_id_edit,
-                "resp_data_edits": resp_data_edits,
-                "delay_spin": delay_spin,
-                "action_combo": action_combo,
-                "signal_combo": signal_combo,
-                "cyclic_timer": cyclic_timer,
-                "cyclic_running": False,
-            })
-
-        self._apply_button = QPushButton(tr("Применить триггеры"))
-        self._apply_button.setFixedSize(140, 32)
-        self._apply_button.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
-        self._apply_button.clicked.connect(self._apply_triggers)
-
-        self._stop_button = QPushButton(tr("Остановить"))
-        self._stop_button.setFixedSize(110, 32)
-        self._stop_button.setFont(QFont("Segoe UI", 10))
-        self._stop_button.clicked.connect(self._stop_triggers)
-
-        self._save_button = QPushButton(tr("Сохранить в файл"))
-        self._save_button.setFixedSize(130, 28)
-        self._save_button.clicked.connect(self._save_triggers_to_file)
-
-        self._load_button = QPushButton(tr("Загрузить из файла"))
-        self._load_button.setFixedSize(140, 28)
-        self._load_button.clicked.connect(self._load_triggers_from_file)
+                "test_btn": test_btn,
+                "bit_combo": bit_combo,
+                "data_from": data_from,
+                "data_to": data_to,
+                "recv_row": recv_row,
+                "resp_row": resp_row,
+                "packet_count": packet_count,
+                "extra_rows": extra_rows,
+                "cache_rows": cache_rows,
+            }
+            self._blocks.append(block)
 
     def _build_layout(self) -> None:
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(10)
+        font = QFont("Segoe UI", 9)
 
-        title = QLabel(tr("Триггеры CAN"))
-        title.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
-        title.setProperty("title", True)
-        layout.addWidget(title)
-
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         container = QWidget()
         container_layout = QVBoxLayout(container)
         container_layout.setSpacing(10)
+        container_layout.setContentsMargins(8, 8, 8, 8)
+
         for block in self._blocks:
+            group_layout = QVBoxLayout(block["group"])
+            group_layout.setSpacing(5)
+            group_layout.setContentsMargins(6, 6, 6, 6)
+
+            top = QHBoxLayout()
+            top.addWidget(block["active"])
+            top.addWidget(block["cache"])
+            top.addStretch()
+            top.addWidget(block["counter"])
+            top.addWidget(block["test_btn"])
+            group_layout.addLayout(top)
+
+            bit_layout = QHBoxLayout()
+            bit_layout.setSpacing(4)
+            bit_layout.addWidget(QLabel(tr("Бит:")))
+            bit_layout.addWidget(block["bit_combo"])
+            bit_layout.addWidget(QLabel("Data"))
+            bit_layout.addWidget(block["data_from"])
+            bit_layout.addWidget(QLabel("-"))
+            bit_layout.addWidget(block["data_to"])
+            bit_layout.addStretch()
+            group_layout.addLayout(bit_layout)
+
+            group_layout.addLayout(block["recv_row"]["layout"])
+            group_layout.addLayout(block["resp_row"]["layout"])
+
+            count_layout = QHBoxLayout()
+            count_layout.addWidget(QLabel(tr("Кол-во отправляемых пакетов:")))
+            count_layout.addWidget(block["packet_count"])
+            count_layout.addStretch()
+            group_layout.addLayout(count_layout)
+
+            group_layout.addWidget(QLabel(tr("Дополнительные ответы:")))
+            for row in block["extra_rows"]:
+                group_layout.addLayout(row["layout"])
+
+            group_layout.addWidget(QLabel(tr("Кэш:")))
+            for row in block["cache_rows"]:
+                group_layout.addLayout(row["layout"])
+            self._set_cache_rows_enabled(block, False)
+
             container_layout.addWidget(block["group"])
-        container_layout.addStretch()
-        scroll.setWidget(container)
-        layout.addWidget(scroll, 1)
 
         buttons = QHBoxLayout()
         buttons.setSpacing(8)
         buttons.addWidget(self._apply_button)
-        buttons.addWidget(self._stop_button)
-        buttons.addStretch()
         buttons.addWidget(self._save_button)
         buttons.addWidget(self._load_button)
-        layout.addLayout(buttons)
+        buttons.addStretch()
+        container_layout.addLayout(buttons)
 
-    def _load_config(self) -> None:
-        triggers = self._config.get("triggers", [])
-        if not isinstance(triggers, list):
-            triggers = []
-        for i in range(TRIGGER_COUNT):
-            trigger = triggers[i] if i < len(triggers) else {}
-            block = self._blocks[i]
-            block["active"].setChecked(trigger.get("active", False))
-            block["id_edit"].setText(trigger.get("id", ""))
-            data = parse_data_bytes(trigger.get("data", "").split())
-            for d, edit in enumerate(block["data_edits"]):
-                edit.setText(f"{data[d]:02X}" if d < len(data) else "")
-            block["resp_id_edit"].setText(trigger.get("resp_id", ""))
-            resp_data = parse_data_bytes(trigger.get("resp_data", "").split())
-            for d, edit in enumerate(block["resp_data_edits"]):
-                edit.setText(f"{resp_data[d]:02X}" if d < len(resp_data) else "")
-            block["delay_spin"].setValue(int(trigger.get("delay", 0)))
-            block["action_combo"].setCurrentIndex(int(trigger.get("action", 0)))
-        self._trigger_counters = [0] * TRIGGER_COUNT
-        self._update_counter_labels()
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(container)
+        scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
 
-    def _save_config(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(scroll)
+
+    def _on_cache_changed(self, index: int, state: int) -> None:
+        enabled = state == Qt.CheckState.Checked.value
+        block = self._blocks[index]
+        self._set_response_enabled(block, not enabled)
+        self._set_cache_rows_enabled(block, enabled)
+
+    def _set_response_enabled(self, block: Dict[str, Any], enabled: bool) -> None:
+        block["resp_row"]["channel"].setEnabled(enabled)
+        block["resp_row"]["id"].setEnabled(enabled)
+        for edit in block["resp_row"]["data"]:
+            edit.setEnabled(enabled)
+        block["resp_row"]["count"].setEnabled(enabled)
+        block["packet_count"].setEnabled(enabled)
+        for row in block["extra_rows"]:
+            row["channel"].setEnabled(enabled)
+            row["id"].setEnabled(enabled)
+            for edit in row["data"]:
+                edit.setEnabled(enabled)
+            row["count"].setEnabled(enabled)
+
+    def _set_cache_rows_enabled(self, block: Dict[str, Any], enabled: bool) -> None:
+        for row in block["cache_rows"]:
+            row["channel"].setEnabled(enabled)
+            row["id"].setEnabled(enabled)
+            for edit in row["data"]:
+                edit.setEnabled(enabled)
+            row["count"].setEnabled(enabled)
+
+    def _parse_id(self, text: str) -> Optional[int]:
+        return hex_to_int(text.strip())
+
+    def _parse_data(self, edits: List[QLineEdit]) -> List[Optional[int]]:
+        result: List[Optional[int]] = []
+        for edit in edits:
+            text = edit.text().strip()
+            if text:
+                val = hex_to_int(text)
+                result.append(val if val is not None else 0)
+            else:
+                result.append(None)
+        return result
+
+    def _build_internal_triggers(self) -> List[Dict[str, Any]]:
         triggers = []
-        for i, block in enumerate(self._blocks):
-            can_id = block["id_edit"].text().strip()
-            data = " ".join(edit.text().strip() for edit in block["data_edits"] if edit.text().strip())
-            resp_id = block["resp_id_edit"].text().strip()
-            resp_data = " ".join(edit.text().strip() for edit in block["resp_data_edits"] if edit.text().strip())
-            triggers.append({
-                "active": block["active"].isChecked(),
-                "id": can_id,
-                "data": data,
-                "resp_id": resp_id,
-                "resp_data": resp_data,
-                "delay": block["delay_spin"].value(),
-                "action": block["action_combo"].currentIndex(),
-            })
-        self._config.set("triggers", triggers)
-
-    def _update_counter_labels(self) -> None:
-        for i, block in enumerate(self._blocks):
-            block["counter"].setText(tr("Срабатываний: {0}").format(self._trigger_counters[i]))
-
-    def _build_internal_triggers(self) -> None:
-        self._internal_triggers = []
         for i, block in enumerate(self._blocks):
             if not block["active"].isChecked():
                 continue
-            can_id = hex_to_int(block["id_edit"].text())
+            recv_id = self._parse_id(block["recv_row"]["id"].text())
+            if recv_id is None:
+                continue
+            triggers.append({
+                "index": i,
+                "recv_id": recv_id,
+                "recv_data": self._parse_data(block["recv_row"]["data"]),
+                "recv_channel": block["recv_row"]["channel"].currentIndex(),
+                "data_from": self._parse_id(block["data_from"].text()),
+                "data_to": self._parse_id(block["data_to"].text()),
+                "cache": block["cache"].isChecked(),
+                "responses": self._collect_rows([block["resp_row"]] + block["extra_rows"]),
+                "cache_rows": self._collect_rows(block["cache_rows"]),
+                "packet_count": block["packet_count"].value(),
+            })
+        return triggers
+
+    def _collect_rows(self, rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        result: List[Dict[str, Any]] = []
+        for row in rows:
+            can_id = self._parse_id(row["id"].text())
             if can_id is None:
                 continue
-            data = parse_data_bytes([edit.text() for edit in block["data_edits"] if edit.text().strip()])
-            resp_id = hex_to_int(block["resp_id_edit"].text())
-            if resp_id is None:
-                resp_id = can_id
-            resp_data = parse_data_bytes([edit.text() for edit in block["resp_data_edits"] if edit.text().strip()])
-            self._internal_triggers.append({
-                "index": i,
+            result.append({
+                "channel": row["channel"].currentIndex(),
                 "id": can_id,
-                "data": data,
-                "resp_id": resp_id,
-                "resp_data": resp_data,
-                "delay": block["delay_spin"].value(),
-                "action": block["action_combo"].currentIndex(),
+                "data": self._parse_data(row["data"]),
+                "count": row["count"].value(),
             })
+        return result
 
     def _apply_triggers(self) -> None:
-        self._stop_all_cyclic()
-        self._save_config()
-        self._build_internal_triggers()
-        self._active = True
-        self._trigger_counters = [0] * TRIGGER_COUNT
-        self._update_counter_labels()
-        logger.info("Триггеры CAN применены: %d активных", len(self._internal_triggers))
-        QMessageBox.information(self, tr("Триггеры"), tr("Триггеры применены и активны"))
+        self._internal_triggers = self._build_internal_triggers()
+        self._active = bool(self._internal_triggers)
+        logger.info("Триггеры применены: %d активных", len(self._internal_triggers))
+        QMessageBox.information(self, tr("Готово"), tr("Триггеры применены: {0}").format(len(self._internal_triggers)))
 
-    def _stop_triggers(self) -> None:
-        self._active = False
-        self._stop_all_cyclic()
-        logger.info("Обработка триггеров CAN остановлена")
-        QMessageBox.information(self, tr("Триггеры"), tr("Обработка триггеров остановлена"))
+    def _load_config(self) -> None:
+        triggers = self._config.get("triggers", [])
+        self.set_config(triggers if isinstance(triggers, list) else [])
 
-    def _stop_all_cyclic(self) -> None:
+    def _save_config(self) -> None:
+        self._config.set("triggers", self._collect_config())
+
+    def _collect_config(self) -> List[Dict[str, object]]:
+        config = []
         for block in self._blocks:
-            block["cyclic_timer"].stop()
-            block["cyclic_running"] = False
-
-    def _on_test(self, index: int) -> None:
-        block = self._blocks[index]
-        can_id = hex_to_int(block["id_edit"].text())
-        if can_id is None:
-            QMessageBox.warning(self, tr("Внимание"), tr("Неверный ID в триггере {0}").format(index + 1))
-            return
-        resp_id = hex_to_int(block["resp_id_edit"].text())
-        if resp_id is None:
-            resp_id = can_id
-        resp_data = parse_data_bytes([edit.text() for edit in block["resp_data_edits"] if edit.text().strip()])
-        frame = pack_can_frame(1, resp_id, bytes(resp_data))
-        self._serial_manager.send_data(frame)
-        self._trigger_counters[index] += 1
-        self._update_counter_labels()
-
-    def _send_cyclic_response(self, index: int) -> None:
-        block = self._blocks[index]
-        can_id = hex_to_int(block["resp_id_edit"].text()) or 0
-        resp_data = parse_data_bytes([edit.text() for edit in block["resp_data_edits"] if edit.text().strip()])
-        frame = pack_can_frame(1, can_id, bytes(resp_data))
-        self._serial_manager.send_data(frame)
-
-    def _send_response(self, index: int, resp_frame: bytes) -> None:
-        self._serial_manager.send_data(resp_frame)
-
-    def _on_signal_selected(self, index: int) -> None:
-        block = self._blocks[index]
-        combo = block["signal_combo"]
-        if combo.currentIndex() <= 0:
-            return
-        data = combo.currentData()
-        if not data:
-            return
-        db = self._dbc_manager.get_cantools_db()
-        if db is None:
-            return
-        try:
-            message = db.get_message_by_name(data["message"])
-            encoded = message.encode({data["signal"]: 0})
-            block["id_edit"].setText(int_to_hex(message.frame_id, 8 if message.frame_id > 0x7FF else 3))
-            for d, edit in enumerate(block["data_edits"]):
-                edit.setText(f"{encoded[d]:02X}" if d < len(encoded) else "")
-        except Exception as exc:  # noqa: BLE001
-            logger.error("Ошибка автозаполнения сигнала DBC: %s", exc)
-            QMessageBox.warning(self, tr("Ошибка"), tr("Не удалось закодировать сигнал: {0}").format(exc))
-
-    def _refresh_dbc_signals(self) -> None:
-        db = self._dbc_manager.get_cantools_db()
-        for block in self._blocks:
-            combo = block["signal_combo"]
-            combo.blockSignals(True)
-            combo.clear()
-            combo.addItem("—")
-            if db is not None:
-                for message in db.messages:
-                    for signal in message.signals:
-                        combo.addItem(f"{message.name}::{signal.name}", {"message": message.name, "signal": signal.name})
-                combo.setEnabled(True)
-            else:
-                combo.setEnabled(False)
-            combo.blockSignals(False)
-
-    def process_frame(self, frame: Dict[str, Any]) -> None:
-        if not self._active or not self._internal_triggers:
-            return
-        frame_id = int(frame["id"])
-        frame_data = bytes(frame["data"])
-        for trigger in self._internal_triggers:
-            if trigger["id"] != frame_id:
-                continue
-            if trigger["data"]:
-                if len(frame_data) < len(trigger["data"]):
-                    continue
-                if not all(frame_data[i] == trigger["data"][i] for i in range(len(trigger["data"]))):
-                    continue
-            idx = trigger["index"]
-            self._trigger_counters[idx] += 1
-            block = self._blocks[idx]
-            block["counter"].setText(tr("Срабатываний: {0}").format(self._trigger_counters[idx]))
-            action = int(trigger.get("action", 0))
-            delay_ms = int(trigger.get("delay", 0))
-            if action == 2:
-                block["cyclic_timer"].stop()
-                block["cyclic_running"] = False
-                continue
-            if action == 1:
-                if not block["cyclic_running"] or delay_ms > 0:
-                    block["cyclic_timer"].stop()
-                    block["cyclic_timer"].setInterval(max(1, delay_ms))
-                    block["cyclic_timer"].start()
-                    block["cyclic_running"] = True
-                continue
-            resp_frame = pack_can_frame(
-                int(frame["channel"]),
-                trigger["resp_id"],
-                bytes(trigger["resp_data"]),
-            )
-            if delay_ms > 0:
-                QTimer.singleShot(delay_ms, lambda rf=resp_frame: self._send_response(idx, rf))
-            else:
-                self._send_response(idx, resp_frame)
-            logger.info(
-                "Сработал триггер %d: ID=0x%s -> ответ ID=0x%s (задержка %d мс)",
-                idx + 1,
-                int_to_hex(frame_id, 8),
-                int_to_hex(trigger["resp_id"], 8),
-                delay_ms,
-            )
-
-    def get_config(self) -> List[Dict[str, object]]:
-        """Возвращает текущие настройки триггеров для экспорта."""
-        self._save_config()
-        return self._config.get("triggers", [])
+            config.append({
+                "active": block["active"].isChecked(),
+                "cache": block["cache"].isChecked(),
+                "bit": block["bit_combo"].currentIndex(),
+                "data_from": block["data_from"].text(),
+                "data_to": block["data_to"].text(),
+                "recv_id": block["recv_row"]["id"].text(),
+                "recv_data": " ".join(e.text() for e in block["recv_row"]["data"] if e.text()),
+                "recv_channel": block["recv_row"]["channel"].currentIndex(),
+                "resp_id": block["resp_row"]["id"].text(),
+                "resp_data": " ".join(e.text() for e in block["resp_row"]["data"] if e.text()),
+                "resp_channel": block["resp_row"]["channel"].currentIndex(),
+                "resp_count": block["resp_row"]["count"].value(),
+                "packet_count": block["packet_count"].value(),
+                "extra_rows": [
+                    {
+                        "channel": row["channel"].currentIndex(),
+                        "id": row["id"].text(),
+                        "data": " ".join(e.text() for e in row["data"] if e.text()),
+                        "count": row["count"].value(),
+                    }
+                    for row in block["extra_rows"]
+                ],
+                "cache_rows": [
+                    {
+                        "channel": row["channel"].currentIndex(),
+                        "id": row["id"].text(),
+                        "data": " ".join(e.text() for e in row["data"] if e.text()),
+                        "count": row["count"].value(),
+                    }
+                    for row in block["cache_rows"]
+                ],
+            })
+        return config
 
     def set_config(self, triggers: List[Dict[str, object]]) -> None:
-        """Загружает настройки триггеров из импортированного профиля."""
-        self._config.set("triggers", triggers)
-        self._load_config()
-
-    def create_trigger_from_packet(self, packet: Dict[str, Any]) -> None:
-        """Создаёт триггер из пакета мониторинга."""
+        """Загружает конфигурацию триггеров из списка."""
         for i, block in enumerate(self._blocks):
-            if block["id_edit"].text().strip():
-                continue
-            block["active"].setChecked(True)
-            block["id_edit"].setText(packet.get("id", ""))
-            data = parse_data_bytes(packet.get("data", []))
-            for d, edit in enumerate(block["data_edits"]):
-                edit.setText(f"{data[d]:02X}" if d < len(data) else "")
-            block["resp_id_edit"].setText(packet.get("id", ""))
-            self._save_config()
-            self._apply_triggers()
-            return
-        QMessageBox.warning(self, tr("Внимание"), tr("Все 10 триггеров заняты"))
+            trigger = triggers[i] if i < len(triggers) else {}
+            block["active"].setChecked(trigger.get("active", False))
+            block["cache"].setChecked(trigger.get("cache", False))
+            block["bit_combo"].setCurrentIndex(int(trigger.get("bit", 0)))
+            block["data_from"].setText(str(trigger.get("data_from", "")))
+            block["data_to"].setText(str(trigger.get("data_to", "")))
 
-    def set_dbc(self, dbc) -> None:
-        """Уведомляет вкладку о смене DBC."""
-        self._refresh_dbc_signals()
+            self._set_row(block["recv_row"], trigger, "recv_id", "recv_data", "recv_channel")
+            self._set_row(block["resp_row"], trigger, "resp_id", "resp_data", "resp_channel", count_key="resp_count")
+            block["packet_count"].setValue(int(trigger.get("packet_count", 1)))
 
-    def _save_triggers_to_file(self) -> None:
+            for r, row in enumerate(block["extra_rows"]):
+                key = "extra_rows"
+                rows = trigger.get(key, [])
+                if r < len(rows):
+                    self._set_row(row, rows[r], "id", "data", "channel", count_key="count")
+
+            for r, row in enumerate(block["cache_rows"]):
+                rows = trigger.get("cache_rows", [])
+                if r < len(rows):
+                    self._set_row(row, rows[r], "id", "data", "channel", count_key="count")
+
+            self._on_cache_changed(i, Qt.CheckState.Checked.value if block["cache"].isChecked() else Qt.CheckState.Unchecked.value)
+
+    def _set_row(
+        self,
+        row: Dict[str, Any],
+        data: Dict[str, object],
+        id_key: str,
+        data_key: str,
+        channel_key: str,
+        count_key: Optional[str] = None,
+    ) -> None:
+        row["id"].setText(str(data.get(id_key, "")))
+        bytes_data = parse_data_bytes(str(data.get(data_key, "")).split())
+        for d, edit in enumerate(row["data"]):
+            edit.setText(f"{bytes_data[d]:02X}" if d < len(bytes_data) else "")
+        row["channel"].setCurrentIndex(int(data.get(channel_key, 0)))
+        if count_key is not None:
+            row["count"].setValue(int(data.get(count_key, 1)))
+
+    def _save_triggers(self) -> None:
+        self._save_config()
         path, _ = QFileDialog.getSaveFileName(self, tr("Сохранить триггеры"), "", "JSON files (*.json)")
         if not path:
             return
         try:
-            Path(path).write_text(json.dumps(self.get_config(), ensure_ascii=False, indent=2), encoding="utf-8")
+            Path(path).write_text(json.dumps(self._collect_config(), ensure_ascii=False, indent=2), encoding="utf-8")
             logger.info("Триггеры сохранены в %s", path)
         except Exception as exc:  # noqa: BLE001
             logger.error("Ошибка сохранения триггеров: %s", exc)
             QMessageBox.critical(self, tr("Ошибка"), tr("Не удалось сохранить триггеры: {0}").format(exc))
 
-    def _load_triggers_from_file(self) -> None:
+    def _load_triggers(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, tr("Загрузить триггеры"), "", "JSON files (*.json)")
         if not path:
             return
@@ -474,7 +472,103 @@ class CanTriggerTab(QWidget):
             if not isinstance(triggers, list):
                 raise ValueError(tr("Файл должен содержать список триггеров"))
             self.set_config(triggers)
+            self._save_config()
             logger.info("Триггеры загружены из %s", path)
         except Exception as exc:  # noqa: BLE001
             logger.error("Ошибка загрузки триггеров: %s", exc)
             QMessageBox.critical(self, tr("Ошибка"), tr("Не удалось загрузить триггеры: {0}").format(exc))
+
+    def _on_test(self, index: int) -> None:
+        """Тестирует отправку ответов для блока без проверки условия."""
+        if index >= len(self._blocks):
+            return
+        block = self._blocks[index]
+        rows = block["cache_rows"] if block["cache"].isChecked() else [block["resp_row"]] + block["extra_rows"]
+        for row in rows:
+            can_id = self._parse_id(row["id"].text())
+            if can_id is None:
+                continue
+            data = self._data_from_edits(row["data"])
+            count = row["count"].value()
+            self._send_frame(can_id, data, row["channel"].currentIndex(), count)
+        logger.info("Тест триггера %d выполнен", index + 1)
+
+    def _data_from_edits(self, edits: List[QLineEdit]) -> bytes:
+        parsed = self._parse_data(edits)
+        data = bytearray(8)
+        for idx, val in enumerate(parsed):
+            if val is not None and idx < 8:
+                data[idx] = val & 0xFF
+        return bytes(data)
+
+    def _send_frame(self, can_id: int, data: bytes, channel_index: int, count: int) -> None:
+        if not self._serial_manager.is_open():
+            return
+        for _ in range(count):
+            if channel_index == 0:
+                frame = pack_can_frame(1, can_id, data)
+                self._serial_manager.send_data(frame)
+            elif channel_index == 1:
+                frame = pack_can_frame(2, can_id, data)
+                self._serial_manager.send_data(frame)
+            else:
+                self._serial_manager.send_data(pack_can_frame(1, can_id, data))
+                self._serial_manager.send_data(pack_can_frame(2, can_id, data))
+
+    def process_frame(self, frame: Dict[str, Any]) -> None:
+        if not self._active:
+            return
+        frame_id = int(frame["id"])
+        frame_channel = int(frame["channel"])
+        data = bytes(frame["data"])
+
+        for trigger in self._internal_triggers:
+            if not self._match_condition(trigger, frame_id, frame_channel, data):
+                continue
+            idx = int(trigger["index"])
+            self._trigger_counters[idx] += 1
+            self._blocks[idx]["counter"].setText(tr("Срабатываний: {0}").format(self._trigger_counters[idx]))
+
+            rows = trigger["cache_rows"] if trigger["cache"] else trigger["responses"]
+            for row in rows:
+                row_data = bytearray(8)
+                for b, val in enumerate(row["data"]):
+                    if val is not None and b < 8:
+                        row_data[b] = val & 0xFF
+                self._send_frame(row["id"], bytes(row_data), row["channel"], row["count"])
+            break
+
+    def _match_condition(
+        self,
+        trigger: Dict[str, Any],
+        frame_id: int,
+        frame_channel: int,
+        data: bytes,
+    ) -> bool:
+        if trigger["recv_id"] != frame_id:
+            return False
+        recv_channel = int(trigger["recv_channel"])
+        if recv_channel != 2 and recv_channel + 1 != frame_channel:
+            return False
+        for idx, expected in enumerate(trigger["recv_data"]):
+            if expected is None:
+                continue
+            if idx >= len(data) or data[idx] != expected:
+                return False
+        if data and trigger["data_from"] is not None and trigger["data_to"] is not None:
+            if not (trigger["data_from"] <= data[0] <= trigger["data_to"]):
+                return False
+        return True
+
+    def create_trigger_from_packet(self, packet: Dict[str, object]) -> None:
+        """Создаёт первый триггер из пакета мониторинга."""
+        if not self._blocks:
+            return
+        block = self._blocks[0]
+        block["active"].setChecked(True)
+        can_id = int(packet["id"])
+        block["recv_row"]["id"].setText(int_to_hex(can_id, 8 if can_id > 0x7FF else 3))
+        bytes_data = bytes(packet["data"])
+        for d, edit in enumerate(block["recv_row"]["data"]):
+            edit.setText(f"{bytes_data[d]:02X}" if d < len(bytes_data) else "")
+        logger.info("Триггер создан из пакета ID=0x%X", can_id)

@@ -64,28 +64,29 @@ class SettingsWindow(QMainWindow):
         self._tabs.addTab(self._flexible_tab, "🧩 " + tr("Гибкая логика"))
         self._tabs.addTab(self._library_tab, "📚 " + tr("Библиотека"))
         self._tabs.addTab(self._graph_tab, "📈 " + tr("Графики"))
-        self._tabs.addTab(self._analyzer_tab, "🔬 " + tr("Анализатор"))
+        self._tabs.addTab(self._analyzer_tab, "🔬 " + tr("Трэйс"))
 
         layout.addWidget(self._tabs, 1)
 
         bottom_layout = QHBoxLayout()
         bottom_layout.setSpacing(8)
-        self._close_button = QPushButton(tr("Закрыть"))
-        self._close_button.setFixedSize(110, 32)
-        self._close_button.clicked.connect(self.close)
+
+        self._save_button = QPushButton(tr("Сохранить"))
+        self._save_button.setFixedSize(120, 32)
+        self._save_button.clicked.connect(self._save_current_config)
 
         self._save_config_button = QPushButton(tr("Сохранить конфигурацию"))
-        self._save_config_button.setFixedSize(160, 32)
+        self._save_config_button.setFixedSize(170, 32)
         self._save_config_button.clicked.connect(self._save_config)
 
-        self._load_config_button = QPushButton(tr("Загрузить конфигурацию"))
-        self._load_config_button.setFixedSize(160, 32)
-        self._load_config_button.clicked.connect(self._load_config)
+        self._factory_reset_button = QPushButton(tr("Заводские настройки"))
+        self._factory_reset_button.setFixedSize(150, 32)
+        self._factory_reset_button.clicked.connect(self._factory_reset)
 
         bottom_layout.addStretch()
+        bottom_layout.addWidget(self._save_button)
         bottom_layout.addWidget(self._save_config_button)
-        bottom_layout.addWidget(self._load_config_button)
-        bottom_layout.addWidget(self._close_button)
+        bottom_layout.addWidget(self._factory_reset_button)
         layout.addLayout(bottom_layout)
 
         self._connect_signals()
@@ -138,6 +139,37 @@ class SettingsWindow(QMainWindow):
             QMessageBox.information(self, tr("Готово"), tr("Конфигурация загружена"))
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, tr("Ошибка"), tr("Не удалось загрузить: {0}").format(exc))
+
+    def _save_current_config(self) -> None:
+        """Сохраняет текущую конфигурацию в файл по умолчанию."""
+        try:
+            self._config.save()
+            self._trigger_tab._save_config()
+            self._flexible_tab._save_config()
+            self._gateway_tab._save_config() if hasattr(self._gateway_tab, "_save_config") else None
+            QMessageBox.information(self, tr("Готово"), tr("Настройки сохранены"))
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, tr("Ошибка"), tr("Не удалось сохранить: {0}").format(exc))
+
+    def _factory_reset(self) -> None:
+        """Сбрасывает настройки к заводским с подтверждением."""
+        answer = QMessageBox.question(
+            self,
+            tr("Заводские настройки"),
+            tr("Вернуть все настройки к значениям по умолчанию?"),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self._config.reset_to_defaults()
+            self._config.save()
+            self._trigger_tab.set_config(self._config.get("triggers", []))
+            self._flexible_tab.set_config(self._config.get("flexible_rules", []))
+            QMessageBox.information(self, tr("Готово"), tr("Настройки сброшены"))
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, tr("Ошибка"), tr("Не удалось сбросить: {0}").format(exc))
 
     def set_dbc(self, dbc_manager) -> None:
         """Уведомляет все вкладки о смене загруженного DBC."""

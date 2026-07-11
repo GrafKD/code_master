@@ -91,3 +91,7 @@ class Config:
         with Path(path).open("r", encoding="utf-8") as file:
             self._data = json.load(file)
         self.save()
+
+    def reset_to_defaults(self) -> None:
+        """Сбрасывает настройки к значениям по умолчанию."""
+        self._data = deepcopy(self.DEFAULT_CONFIG)
