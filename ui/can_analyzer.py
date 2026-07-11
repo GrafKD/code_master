@@ -1,4 +1,4 @@
-"""Автоанализатор CAN-шины с тепловой картой и экспортом."""
+"""Трэйс CAN-шины с тепловой картой и экспортом."""
 
 import csv
 import time
@@ -31,10 +31,10 @@ logger = get_logger(__name__)
 
 
 class CanAnalyzer(QWidget):
-    """Виджет автоматического анализа CAN-трафика."""
+    """Виджет трэйса CAN-шины."""
 
     def __init__(self, serial_manager: SerialManager, parent: Optional[QWidget] = None) -> None:
-        """Создаёт анализатор.
+        """Создаёт трэйс.
 
         Args:
             serial_manager: Менеджер COM-порта (для получения кадров).
@@ -50,7 +50,7 @@ class CanAnalyzer(QWidget):
         """Создаёт элементы управления."""
         font = QFont("Segoe UI", 10)
 
-        self._title = QLabel(tr("Автоанализатор CAN-шины"))
+        self._title = QLabel(tr("Трэйс CAN-шины"))
         self._title.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
         self._title.setProperty("title", True)
 
@@ -147,7 +147,7 @@ class CanAnalyzer(QWidget):
         self._duration = 0.0
 
     def set_dbc(self, dbc_manager) -> None:
-        """Обновляет анализатор при смене DBC (заглушка)."""
+        """Обновляет трэйс при смене DBC (заглушка)."""
         pass
 
     def process_frame(self, frame: Dict[str, Any]) -> None:
@@ -193,7 +193,7 @@ class CanAnalyzer(QWidget):
         self._start_button.setText(tr("Остановить анализ"))
         self._table.setRowCount(0)
         self._timer.start(100)
-        logger.info("Анализ CAN-шины запущен на %d секунд", self._duration)
+        logger.info("Трэйс CAN-шины запущен на %d секунд", self._duration)
 
     def _stop_analysis(self) -> None:
         """Останавливает анализ и обновляет таблицу."""
@@ -202,7 +202,7 @@ class CanAnalyzer(QWidget):
         self._progress.setValue(100)
         self._start_button.setText(tr("Начать анализ"))
         self._update_table()
-        logger.info("Анализ CAN-шины завершён, уникальных ID: %d", len(self._stats))
+        logger.info("Трэйс CAN-шины завершён, уникальных ID: %d", len(self._stats))
 
     def _on_tick(self) -> None:
         """Обновляет прогресс-бар и таблицу во время анализа."""

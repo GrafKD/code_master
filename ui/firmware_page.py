@@ -29,19 +29,19 @@ from models.translations import _ as tr
 logger = get_logger(__name__)
 
 DEMO_FW_VERSIONS: Dict[str, str] = {
-    "v1.0.0": "firmware_v1.0.0.bin",
-    "v1.1.0": "firmware_v1.1.0.bin",
-    "v1.2.5": "firmware_v1.2.5.bin",
-    "v2.0.0": "firmware_v2.0.0.bin",
-    "v2.1.3": "firmware_v2.1.3.bin",
+    "v1.0.0": "",
+    "v1.1.0": "",
+    "v1.2.5": "",
+    "v2.0.0": "",
+    "v2.1.3": "",
 }
 
 DEMO_CARS: Dict[str, str] = {
-    "Toyota Camry — v2.1.3": "toyota_camry_v2.1.3.bin",
-    "Ford Focus — v1.2.5": "ford_focus_v1.2.5.bin",
-    "BMW E46 — v2.0.0": "bmw_e46_v2.0.0.bin",
-    "Audi A4 — v1.1.0": "audi_a4_v1.1.0.bin",
-    "VW Golf — v2.1.3": "vw_golf_v2.1.3.bin",
+    "Toyota Camry — v2.1.3": "",
+    "Ford Focus — v1.2.5": "",
+    "BMW E46 — v2.0.0": "",
+    "Audi A4 — v1.1.0": "",
+    "VW Golf — v2.1.3": "",
 }
 
 
@@ -227,7 +227,8 @@ class FirmwarePage(QWidget):
     def _populate_fw_list(self) -> None:
         self._fw_list.clear()
         for version in sorted(DEMO_FW_VERSIONS.keys()):
-            item = QListWidgetItem(version)
+            display = self._display_name(version, DEMO_FW_VERSIONS[version])
+            item = QListWidgetItem(display)
             item.setData(Qt.ItemDataRole.UserRole, DEMO_FW_VERSIONS[version])
             self._fw_list.addItem(item)
         if self._fw_list.count():
@@ -239,11 +240,17 @@ class FirmwarePage(QWidget):
         for name in sorted(DEMO_CARS.keys()):
             if text and text not in name.lower():
                 continue
-            item = QListWidgetItem(name)
+            display = self._display_name(name, DEMO_CARS[name])
+            item = QListWidgetItem(display)
             item.setData(Qt.ItemDataRole.UserRole, DEMO_CARS[name])
             self._car_list.addItem(item)
         if self._car_list.count():
             self._car_list.setCurrentRow(0)
+
+    def _display_name(self, name: str, path: str) -> str:
+        if path:
+            return name
+        return f"{name} {tr('(загрузите файл)')}"
 
     def _selected_file(self, list_widget: QListWidget) -> Optional[str]:
         item = list_widget.currentItem()
@@ -269,26 +276,38 @@ class FirmwarePage(QWidget):
     def _on_fw_update(self) -> None:
         path = self._selected_file(self._fw_list)
         if not path:
-            self._set_status(tr("Выберите версию ПО"), error=True)
+            QMessageBox.warning(self, tr("Внимание"), tr("Для выбранной версии ПО не выбран файл. Нажмите кнопку 📂."))
             return
         self._flash_file(path)
 
     def _on_fw_browse(self) -> None:
         path = self._browse_firmware()
-        if path:
-            self._flash_file(path)
+        if not path:
+            return
+        item = self._fw_list.currentItem()
+        if item is not None:
+            base = item.text().replace(f" {tr('(загрузите файл)')}", "").strip()
+            item.setText(base)
+            item.setData(Qt.ItemDataRole.UserRole, path)
+        self._flash_file(path)
 
     def _on_car_update(self) -> None:
         path = self._selected_file(self._car_list)
         if not path:
-            self._set_status(tr("Выберите автомобиль"), error=True)
+            QMessageBox.warning(self, tr("Внимание"), tr("Для выбранного автомобиля не выбран файл. Нажмите кнопку 📂."))
             return
         self._flash_file(path)
 
     def _on_car_browse(self) -> None:
         path = self._browse_firmware()
-        if path:
-            self._flash_file(path)
+        if not path:
+            return
+        item = self._car_list.currentItem()
+        if item is not None:
+            base = item.text().replace(f" {tr('(загрузите файл)')}", "").strip()
+            item.setText(base)
+            item.setData(Qt.ItemDataRole.UserRole, path)
+        self._flash_file(path)
 
     def _on_car_search(self, text: str) -> None:
         self._populate_car_list(text)
