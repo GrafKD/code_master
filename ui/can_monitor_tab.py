@@ -64,7 +64,14 @@ class _IdValidator:
         self._bit_combo.currentIndexChanged.connect(self._validate)
 
     def _validate(self) -> None:
-        text = self._edit.text().strip()
+        text = self._edit.text()
+        upper = text.upper()
+        if text != upper:
+            self._edit.blockSignals(True)
+            self._edit.setText(upper)
+            self._edit.blockSignals(False)
+            text = upper
+        text = text.strip()
         if not text:
             self._edit.setStyleSheet("")
             return
@@ -291,10 +298,12 @@ class CanChannelMonitor(QWidget):
         self._send_data_edits: List[QLineEdit] = []
         for i in range(8):
             edit = QLineEdit()
-            edit.setFixedWidth(28)
+            edit.setFixedWidth(36)
             edit.setFont(font)
             edit.setMaxLength(2)
             edit.setPlaceholderText(f"D{i}")
+            edit.setValidator(QRegularExpressionValidator(QRegularExpression("[0-9A-Fa-f]{0,2}")))
+            edit.textChanged.connect(lambda text, e=edit: self._on_data_edit_changed(e, text))
             self._send_data_edits.append(edit)
 
         self._send_period_spin = QSpinBox()
@@ -379,6 +388,14 @@ class CanChannelMonitor(QWidget):
     def _on_send_dlc_changed(self, value: int) -> None:
         for i, edit in enumerate(self._send_data_edits):
             edit.setEnabled(i < value)
+
+    def _on_data_edit_changed(self, edit: QLineEdit, text: str) -> None:
+        """Автоматически приводит введённые HEX-символы к верхнему регистру."""
+        upper = text.upper()
+        if text != upper:
+            edit.blockSignals(True)
+            edit.setText(upper)
+            edit.blockSignals(False)
 
     def _on_cyclic_toggled(self, checked: bool) -> None:
         if checked:

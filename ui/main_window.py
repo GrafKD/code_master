@@ -30,7 +30,7 @@ from models.config import Config
 from models.logger import get_logger, get_log_dir
 from models.translations import _ as tr, set_language
 from ui.com_settings_dialog import ComSettingsDialog
-from ui.dark_theme import apply_dark_theme, apply_light_theme
+from ui.dark_theme import apply_theme
 from ui.firmware_page import FirmwarePage
 from ui.settings_window import SettingsWindow
 
@@ -282,7 +282,7 @@ class MainWindow(QMainWindow):
         if app is None:
             return
         self._config.set("light_theme", False)
-        apply_dark_theme(app)
+        apply_theme(app, False)
 
     def _set_light_theme(self) -> None:
         """Устанавливает светлую тему."""
@@ -290,7 +290,7 @@ class MainWindow(QMainWindow):
         if app is None:
             return
         self._config.set("light_theme", True)
-        apply_light_theme(app)
+        apply_theme(app, True)
 
     def _on_language_changed(self, index: int) -> None:
         """Переключает язык через выпадающий список."""

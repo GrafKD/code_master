@@ -312,6 +312,14 @@ def _apply_theme(app: QApplication, colors: dict) -> None:
     app.setStyleSheet(Template(_BASE_QSS).safe_substitute(**colors))
 
 
+def apply_theme(app: QApplication, light: bool = False) -> None:
+    """Применяет тёмную или светлую тему по флагу."""
+    if light:
+        apply_light_theme(app)
+    else:
+        apply_dark_theme(app)
+
+
 def apply_dark_theme(app: QApplication) -> None:
     """Применяет современную тёмную тему."""
     _apply_theme(app, {
