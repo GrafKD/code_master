@@ -6,8 +6,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+from platformdirs import user_log_dir
 
-LOG_DIR = Path(__file__).resolve().parent.parent / "logs"
+
+LOG_DIR = Path(user_log_dir("CodeMaster", appauthor=False, ensure_exists=True))
 LOG_FILE = LOG_DIR / "code_master.log"
 
 

@@ -381,9 +381,11 @@ def show_exception_box(exc_type, exc_value, exc_tb) -> None:
     message = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
     logger.critical("Необработанное исключение: %s", message)
     try:
-        QMessageBox.critical(None, tr("Критическая ошибка"), tr("Произошла непредвиденная ошибка:\n{0}").format(exc_value))
+        if QApplication.instance() is not None:
+            QMessageBox.critical(None, tr("Критическая ошибка"), tr("Произошла непредвиденная ошибка:\n{0}").format(exc_value))
     except Exception:  # noqa: BLE001
         pass
+    print(message, file=sys.stderr)
 
 
 sys.excepthook = show_exception_box

@@ -34,11 +34,11 @@ from core.serial_manager import SerialManager
 from models.config import Config
 from models.logger import get_logger
 from models.translations import _ as tr
-from models.utils import int_to_hex
+from models.utils import get_library_root, int_to_hex
 
 logger = get_logger(__name__)
 
-SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "library" / "scripts"
+SCRIPTS_DIR = get_library_root() / "scripts"
 
 DEFAULT_SCRIPT = (
     "# Пример обработки CAN-кадра\n"

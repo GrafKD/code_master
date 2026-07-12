@@ -263,6 +263,10 @@ class CanChannelMonitor(QWidget):
         self._search_edit.setPlaceholderText(tr("Поиск по ID или данным…"))
         self._search_edit.textChanged.connect(self._apply_search)
 
+        self._filter_from.textChanged.connect(self._apply_filters)
+        self._filter_to.textChanged.connect(self._apply_filters)
+        self._exclude_edit.textChanged.connect(self._apply_filters)
+
         self._table = QTableWidget()
         self._table.setColumnCount(7)
         self._table.setHorizontalHeaderLabels(
@@ -650,10 +654,6 @@ class CanChannelMonitor(QWidget):
         self._id_data_variants.setdefault(frame_id, set()).add(data)
 
         self._table.scrollToBottom()
-        if self._search_edit.text().strip():
-            self._apply_search(self._search_edit.text())
-        else:
-            self._apply_filters()
 
     def _show_context_menu(self, position) -> None:
         row = self._table.currentRow()

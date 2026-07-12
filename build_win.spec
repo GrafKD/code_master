@@ -3,7 +3,7 @@ a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[('library', 'library')],
     hiddenimports=[
         'PySide6.QtCore',
         'PySide6.QtGui',
@@ -67,4 +67,5 @@ exe = EXE(
     upx_exclude=[],
     runtime_tmpdir=None,
     console=False,
+    icon='assets/icon.ico',
 )

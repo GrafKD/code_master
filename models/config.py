@@ -11,6 +11,8 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
+from platformdirs import user_data_dir
+
 
 class Config:
     """Синглтон для хранения и автоматического сохранения настроек."""
@@ -40,7 +42,7 @@ class Config:
         """Инициализирует путь к файлу конфигурации и загружает данные."""
         if self._initialized:
             return
-        self._file_path = Path(__file__).resolve().parent.parent / "config.json"
+        self._file_path = Path(user_data_dir("CodeMaster", appauthor=False, ensure_exists=True)) / "config.json"
         self._data = deepcopy(self.DEFAULT_CONFIG)
         self._initialized = True
         self.load()

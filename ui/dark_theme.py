@@ -306,6 +306,7 @@ QSplitter::handle:vertical {
 
 def _apply_theme(app: QApplication, colors: dict) -> None:
     """Применяет тему с заданной цветовой схемой."""
+    app.setStyle("Fusion")
     font = QFont("Segoe UI", 10)
     if not QFont(font).exactMatch():
         font = QFont("sans-serif", 10)

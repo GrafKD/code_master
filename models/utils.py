@@ -1,7 +1,12 @@
 """Вспомогательные функции для приложения «Код Мастер»."""
 
 import re
+import shutil
+import sys
+from pathlib import Path
 from typing import List, Optional
+
+from platformdirs import user_data_dir
 
 
 def hex_to_int(text: str) -> Optional[int]:
@@ -95,3 +100,25 @@ def bytes_to_hex_string(data: bytes) -> str:
         Строка, например «DE AD BE EF».
     """
     return " ".join(f"{b:02X}" for b in data)
+
+
+def get_library_root() -> Path:
+    """Возвращает путь к папке библиотеки в доступном пользовательском месте.
+
+    При первом запуске копирует bundled библиотеку из папки рядом с кодом,
+    если она есть и пользовательская папка пуста.
+    """
+    bundle_root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
+    source = bundle_root / "library"
+    target = Path(user_data_dir("CodeMaster", appauthor=False, ensure_exists=True)) / "library"
+    target.mkdir(parents=True, exist_ok=True)
+    if source.exists() and source.is_dir() and not any(target.iterdir()):
+        try:
+            for item in source.iterdir():
+                if item.is_dir():
+                    shutil.copytree(item, target / item.name, dirs_exist_ok=True)
+                else:
+                    shutil.copy2(item, target)
+        except (OSError, shutil.Error):
+            pass
+    return target

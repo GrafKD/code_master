@@ -9,10 +9,11 @@ import cantools.database
 from core.dbc_parser import dbc_to_dict, load_dbc, parse_dbc
 from models.config import Config
 from models.logger import get_logger
+from models.utils import get_library_root
 
 logger = get_logger(__name__)
 
-DBC_DIR = Path(__file__).resolve().parent.parent / "library" / "dbc"
+DBC_DIR = get_library_root() / "dbc"
 
 
 class DBCManager:

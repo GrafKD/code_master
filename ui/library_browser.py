@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 from models.config import Config
 from models.logger import get_logger
 from models.translations import _ as tr
+from models.utils import get_library_root
 from ui.can_trigger_tab import CanTriggerTab
 from ui.flexible_logic_tab import FlexibleLogicTab
 from ui.ui_utils import setup_button
@@ -34,7 +35,7 @@ from ui.ui_utils import setup_button
 logger = get_logger(__name__)
 
 
-LIBRARY_ROOT = Path(__file__).resolve().parent.parent / "library"
+LIBRARY_ROOT = get_library_root()
 
 
 class PreviewDialog(QDialog):

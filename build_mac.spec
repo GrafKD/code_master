@@ -4,7 +4,7 @@ a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[('library', 'library')],
     hiddenimports=[
         'PySide6.QtCore',
         'PySide6.QtGui',
@@ -89,6 +89,6 @@ coll = COLLECT(
 app = BUNDLE(
     coll,
     name='CodeMaster.app',
-    icon=None,
+    icon='assets/icon.icns',
     bundle_identifier='com.codemaster.app',
 )

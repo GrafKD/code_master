@@ -12,3 +12,4 @@ build/
 !build_mac.spec
 !build_linux.spec
 *.spec.bak
+.DS_Store

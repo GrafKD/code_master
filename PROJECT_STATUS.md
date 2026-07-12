@@ -102,6 +102,20 @@
 - ✅ Глобальный стиль `QCheckBox` в тёмной теме: квадратный индикатор с рамкой #6C8CFF, белая галочка, фон #2B2B3C.
 - ✅ Увеличена ширина окна настроек до 1100 px для размещения расширенных строк фреймов.
 
+## 13. Исправление падения macOS-приложения на старте (12.07.2026)
+
+- ✅ Диагностировано: на старте `setup_logging()` пытался создать папку `logs` внутри read-only `.app` бандла, что приводило к исключению до создания `QApplication`.
+- ✅ `sys.excepthook` (`show_exception_box`) в `ui/main_window.py` теперь не вызывает `QMessageBox`, если `QApplication` ещё не создан, и пишет ошибку в `stderr`.
+- ✅ `models/logger.py` переключено на `platformdirs.user_log_dir` — логи теперь пишутся в `~/Library/Logs/CodeMaster` (macOS), `%LOCALAPPDATA%\CodeMaster\Logs` (Windows) и т. д.
+- ✅ `models/config.py` переключено на `platformdirs.user_data_dir` — `config.json` теперь хранится в `~/Library/Application Support/CodeMaster`.
+- ✅ Пути `library`/`dbc`/`scripts` переключены на `get_library_root()` в `models/utils.py`, которая возвращает доступное для записи пользовательское место и копирует bundled defaults при первом запуске.
+- ✅ `build_mac.spec` теперь включает `library` в `datas` для копирования в `.app`.
+- ✅ `platformdirs>=4.0` добавлен в `requirements.txt`.
+- ✅ `python3 -m py_compile` и запуск из read-only копии прошли успешно.
+- ✅ Диагностировано зависание на Windows при старте эмуляции в мониторе: `CanMonitorTab.add_frame` на каждый кадр применяла фильтры и поиск по всем строкам таблицы (O(n) на фрейм).
+- ✅ `CanMonitorTab.add_frame` больше не вызывает `_apply_filters` / `_apply_search` при получении кадра; фильтры и поиск применяются только при изменении соответствующих полей.
+- ✅ Добавлены `textChanged` соединения для полей фильтрации (`ID от`, `ID до`, `Искл.`).
+
 ## Итоговая оценка готовности
 
 **99 %**
