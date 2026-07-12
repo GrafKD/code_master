@@ -499,6 +499,8 @@ class Translator:
                 "Автоматическая запись DATA в Кэш": "Auto-save DATA to Cache",
                 "Период": "Period",
                 "Кол-во": "Qty",
+                "Кол-во отправок": "Send count",
+                "Поиск по разделам...": "Search sections...",
                 "Data": "Data",
                 "DLC": "DLC",
                 "ID": "ID",

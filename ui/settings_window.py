@@ -7,6 +7,7 @@ from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
+    QLineEdit,
     QMainWindow,
     QMessageBox,
     QPushButton,
@@ -19,6 +20,7 @@ from core.serial_manager import SerialManager
 from models.config import Config
 from models.logger import get_logger
 from models.translations import _ as tr
+from ui.ui_utils import setup_button
 from ui.can_analyzer import CanAnalyzer
 from ui.can_gateway_tab import CanGatewayTab
 from ui.signal_graph_tab import SignalGraphTab
@@ -66,25 +68,35 @@ class SettingsWindow(QMainWindow):
         self._tabs.addTab(self._graph_tab, "📈 " + tr("Графики"))
         self._tabs.addTab(self._analyzer_tab, "🔬 " + tr("Трэйс"))
 
+        search_layout = QHBoxLayout()
+        search_layout.setSpacing(8)
+        self._search_edit = QLineEdit()
+        self._search_edit.setPlaceholderText(tr("Поиск по разделам..."))
+        self._search_edit.setFixedWidth(220)
+        self._search_edit.textChanged.connect(self._on_search_changed)
+        search_layout.addWidget(self._search_edit)
+        search_layout.addStretch()
+        layout.addLayout(search_layout)
+
         layout.addWidget(self._tabs, 1)
 
         bottom_layout = QHBoxLayout()
         bottom_layout.setSpacing(8)
 
         self._save_button = QPushButton(tr("Сохранить"))
-        self._save_button.setFixedSize(120, 32)
+        setup_button(self._save_button, height=32)
         self._save_button.clicked.connect(self._save_current_config)
 
         self._save_config_button = QPushButton(tr("Сохранить конфигурацию"))
-        self._save_config_button.setFixedSize(170, 32)
+        setup_button(self._save_config_button, height=32)
         self._save_config_button.clicked.connect(self._save_config)
 
         self._factory_reset_button = QPushButton(tr("Заводские настройки"))
-        self._factory_reset_button.setFixedSize(150, 32)
+        setup_button(self._factory_reset_button, height=32)
         self._factory_reset_button.clicked.connect(self._factory_reset)
 
         self._back_button = QPushButton(tr("Назад"))
-        self._back_button.setFixedSize(100, 32)
+        setup_button(self._back_button, height=32)
         self._back_button.clicked.connect(self._on_back)
 
         bottom_layout.addStretch()
@@ -109,6 +121,19 @@ class SettingsWindow(QMainWindow):
     def _on_create_trigger(self, packet: dict) -> None:
         self._trigger_tab.create_trigger_from_packet(packet)
         self._tabs.setCurrentWidget(self._trigger_tab)
+
+    def _on_search_changed(self, text: str) -> None:
+        """Переключает вкладку по введённой подстроке (регистр не важен)."""
+        query = text.strip().lower()
+        if not query:
+            return
+        for i in range(self._tabs.count()):
+            tab_text = self._tabs.tabText(i).lower()
+            # Убираем эмодзи и пробелы для сравнения
+            clean_text = "".join(ch for ch in tab_text if ch.isalnum() or ch.isspace()).strip()
+            if query in clean_text or query in tab_text:
+                self._tabs.setCurrentIndex(i)
+                return
 
     def _on_serial_error(self, message: str) -> None:
         logger.error("Ошибка COM-порта: %s", message)

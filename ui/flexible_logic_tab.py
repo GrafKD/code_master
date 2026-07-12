@@ -29,6 +29,7 @@ from models.logger import get_logger
 from models.translations import _ as tr
 from models.utils import hex_to_int, int_to_hex, parse_data_bytes
 from ui.can_monitor_tab import DbcSignalDialog
+from ui.ui_utils import setup_button
 
 logger = get_logger(__name__)
 
@@ -74,8 +75,7 @@ class RuleEditDialog(QDialog):
         self._condition_data_edit.setToolTip(tr("Эталонные данные для сравнения по маске (8 байт)."))
 
         self._from_dbc_button = QPushButton(tr("Из DBC"))
-        self._from_dbc_button.setFixedSize(80, 26)
-        self._from_dbc_button.setFont(font)
+        setup_button(self._from_dbc_button, height=26)
         self._from_dbc_button.clicked.connect(self._on_from_dbc)
 
         self._resp_id_edit = QLineEdit()
@@ -105,13 +105,11 @@ class RuleEditDialog(QDialog):
         self._delay_spin.setFont(font)
 
         self._save_button = QPushButton(tr("Сохранить"))
-        self._save_button.setFixedSize(100, 30)
-        self._save_button.setFont(font)
+        setup_button(self._save_button, height=30)
         self._save_button.clicked.connect(self.accept)
 
         self._cancel_button = QPushButton(tr("Отмена"))
-        self._cancel_button.setFixedSize(100, 30)
-        self._cancel_button.setFont(font)
+        setup_button(self._cancel_button, height=30)
         self._cancel_button.clicked.connect(self.reject)
 
     def _build_layout(self) -> None:
@@ -237,30 +235,29 @@ class FlexibleLogicTab(QWidget):
         self._table.setColumnWidth(4, 90)
 
         self._add_button = QPushButton(tr("Добавить"))
-        self._add_button.setFixedSize(90, 28)
+        setup_button(self._add_button, height=28)
         self._add_button.clicked.connect(self._on_add)
         self._edit_button = QPushButton(tr("Редактировать"))
-        self._edit_button.setFixedSize(110, 28)
+        setup_button(self._edit_button, height=28)
         self._edit_button.clicked.connect(self._on_edit)
         self._delete_button = QPushButton(tr("Удалить"))
-        self._delete_button.setFixedSize(90, 28)
+        setup_button(self._delete_button, height=28)
         self._delete_button.clicked.connect(self._on_delete)
 
         self._apply_button = QPushButton(tr("Применить правила"))
-        self._apply_button.setFixedSize(130, 30)
-        self._apply_button.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
+        setup_button(self._apply_button, bold=True, height=30)
         self._apply_button.clicked.connect(self._apply_rules)
 
         self._stop_button = QPushButton(tr("Остановить"))
-        self._stop_button.setFixedSize(110, 30)
+        setup_button(self._stop_button, height=30)
         self._stop_button.clicked.connect(self._stop_rules)
 
         self._save_button = QPushButton(tr("Сохранить в файл"))
-        self._save_button.setFixedSize(120, 28)
+        setup_button(self._save_button, height=28)
         self._save_button.clicked.connect(self._save_rules_to_file)
 
         self._load_button = QPushButton(tr("Загрузить из файла"))
-        self._load_button.setFixedSize(130, 28)
+        setup_button(self._load_button, height=28)
         self._load_button.clicked.connect(self._load_rules_from_file)
 
     def _build_layout(self) -> None:

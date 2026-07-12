@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
@@ -27,6 +28,7 @@ from models.config import Config
 from models.logger import get_logger
 from models.translations import _ as tr
 from models.utils import hex_to_int, int_to_hex, parse_data_bytes
+from ui.ui_utils import setup_button
 
 logger = get_logger(__name__)
 
@@ -88,23 +90,19 @@ class CanGatewayTab(QWidget):
 
         # Кнопки управления
         self._start_button = QPushButton(tr("Запустить шлюз"))
-        self._start_button.setFixedSize(140, 34)
-        self._start_button.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
+        setup_button(self._start_button, bold=True, height=34)
         self._start_button.clicked.connect(self._start)
 
         self._stop_button = QPushButton(tr("Остановить"))
-        self._stop_button.setFixedSize(110, 34)
-        self._stop_button.setFont(QFont("Segoe UI", 10))
+        setup_button(self._stop_button, height=34)
         self._stop_button.clicked.connect(self._stop)
 
         self._save_button = QPushButton(tr("Сохранить правила"))
-        self._save_button.setFixedSize(130, 28)
-        self._save_button.setFont(font)
+        setup_button(self._save_button, height=28)
         self._save_button.clicked.connect(self._save_rules)
 
         self._load_button = QPushButton(tr("Загрузить правила"))
-        self._load_button.setFixedSize(140, 28)
-        self._load_button.setFont(font)
+        setup_button(self._load_button, height=28)
         self._load_button.clicked.connect(self._load_rules)
 
     def _create_rule_block(self, index: int, font: QFont) -> Dict[str, Any]:
@@ -119,7 +117,7 @@ class CanGatewayTab(QWidget):
         active.setFont(font)
 
         recv_id = QLineEdit()
-        recv_id.setFixedWidth(80)
+        recv_id.setFixedWidth(90)
         recv_id.setFont(font)
         recv_id.setMaxLength(8)
         recv_id.setPlaceholderText(tr("ID"))
@@ -127,14 +125,14 @@ class CanGatewayTab(QWidget):
         recv_data: List[QLineEdit] = []
         for d in range(8):
             edit = QLineEdit()
-            edit.setFixedWidth(30)
+            edit.setFixedWidth(36)
             edit.setFont(font)
             edit.setMaxLength(2)
             edit.setPlaceholderText(f"D{d}")
             recv_data.append(edit)
 
         replace_id = QLineEdit()
-        replace_id.setFixedWidth(80)
+        replace_id.setFixedWidth(90)
         replace_id.setFont(font)
         replace_id.setMaxLength(8)
         replace_id.setPlaceholderText(tr("ID"))
@@ -142,7 +140,7 @@ class CanGatewayTab(QWidget):
         replace_data: List[QLineEdit] = []
         for d in range(8):
             edit = QLineEdit()
-            edit.setFixedWidth(30)
+            edit.setFixedWidth(36)
             edit.setFont(font)
             edit.setMaxLength(2)
             edit.setPlaceholderText(f"D{d}")
@@ -200,7 +198,12 @@ class CanGatewayTab(QWidget):
         layout.addWidget(title)
 
         layout.addWidget(self._ignore_group)
-        layout.addWidget(self._rules_group, 1)
+
+        rules_scroll = QScrollArea()
+        rules_scroll.setWidgetResizable(True)
+        rules_scroll.setWidget(self._rules_group)
+        rules_scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+        layout.addWidget(rules_scroll, 1)
 
         buttons = QHBoxLayout()
         buttons.setSpacing(8)

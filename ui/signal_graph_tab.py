@@ -22,6 +22,7 @@ from core.dbc_parser import decode_frame
 from core.serial_manager import SerialManager
 from models.logger import get_logger
 from models.translations import _ as tr
+from ui.ui_utils import setup_button
 
 logger = get_logger(__name__)
 
@@ -65,19 +66,16 @@ class SignalGraphTab(QWidget):
         self._signal_combo.setMinimumWidth(180)
 
         self._add_button = QPushButton(tr("Добавить график"))
-        self._add_button.setFixedSize(130, 30)
-        self._add_button.setFont(font)
+        setup_button(self._add_button, height=30)
         self._add_button.clicked.connect(self._add_graph)
 
         self._pause_button = QPushButton(tr("Пауза"))
-        self._pause_button.setFixedSize(80, 30)
-        self._pause_button.setFont(font)
+        setup_button(self._pause_button, height=30)
         self._pause_button.setCheckable(True)
         self._pause_button.clicked.connect(self._on_pause)
 
         self._clear_button = QPushButton(tr("Очистить"))
-        self._clear_button.setFixedSize(80, 30)
-        self._clear_button.setFont(font)
+        setup_button(self._clear_button, height=30)
         self._clear_button.clicked.connect(self._clear_graphs)
 
         self._plot_widget = pg.PlotWidget()

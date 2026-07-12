@@ -29,6 +29,7 @@ from models.logger import get_logger
 from models.translations import _ as tr
 from ui.can_trigger_tab import CanTriggerTab
 from ui.flexible_logic_tab import FlexibleLogicTab
+from ui.ui_utils import setup_button
 
 logger = get_logger(__name__)
 
@@ -111,28 +112,23 @@ class LibraryBrowser(QWidget):
         self._info_label.setMinimumHeight(60)
 
         self._load_button = QPushButton(tr("Загрузить"))
-        self._load_button.setFont(font)
-        self._load_button.setFixedSize(110, 28)
+        setup_button(self._load_button, height=28)
         self._load_button.clicked.connect(self._on_load)
 
         self._preview_button = QPushButton(tr("Предпросмотр"))
-        self._preview_button.setFont(font)
-        self._preview_button.setFixedSize(110, 28)
+        setup_button(self._preview_button, height=28)
         self._preview_button.clicked.connect(self._on_preview)
 
         self._save_button = QPushButton(tr("Сохранить текущие настройки как…"))
-        self._save_button.setFont(font)
-        self._save_button.setFixedSize(210, 28)
+        setup_button(self._save_button, height=28)
         self._save_button.clicked.connect(self._on_save_current)
 
         self._import_button = QPushButton(tr("Импорт .cmm"))
-        self._import_button.setFont(font)
-        self._import_button.setFixedSize(110, 28)
+        setup_button(self._import_button, height=28)
         self._import_button.clicked.connect(self._on_import)
 
         self._export_button = QPushButton(tr("Экспорт .cmm"))
-        self._export_button.setFont(font)
-        self._export_button.setFixedSize(110, 28)
+        setup_button(self._export_button, height=28)
         self._export_button.clicked.connect(self._on_export)
 
     def _build_layout(self) -> None:

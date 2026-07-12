@@ -25,6 +25,7 @@ from core.serial_manager import SerialManager
 from models.config import Config
 from models.logger import get_logger
 from models.translations import _ as tr
+from ui.ui_utils import setup_button
 
 logger = get_logger(__name__)
 
@@ -123,8 +124,7 @@ class FirmwarePage(QWidget):
         self._fw_list = QListWidget()
         self._fw_list.setFont(font)
         self._fw_update_button = QPushButton(tr("Обновить"))
-        self._fw_update_button.setFixedHeight(30)
-        self._fw_update_button.setFont(font)
+        setup_button(self._fw_update_button, height=30)
         self._fw_update_button.clicked.connect(self._on_fw_update)
         self._fw_browse_button = QPushButton("📂")
         self._fw_browse_button.setFixedSize(34, 30)
@@ -142,8 +142,7 @@ class FirmwarePage(QWidget):
         self._car_list = QListWidget()
         self._car_list.setFont(font)
         self._car_update_button = QPushButton(tr("Обновить"))
-        self._car_update_button.setFixedHeight(30)
-        self._car_update_button.setFont(font)
+        setup_button(self._car_update_button, height=30)
         self._car_update_button.clicked.connect(self._on_car_update)
         self._car_browse_button = QPushButton("📂")
         self._car_browse_button.setFixedSize(34, 30)
@@ -159,8 +158,7 @@ class FirmwarePage(QWidget):
         self._config_label.setWordWrap(True)
         self._config_label.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         self._config_update_button = QPushButton(tr("Обновить"))
-        self._config_update_button.setFixedHeight(30)
-        self._config_update_button.setFont(font)
+        setup_button(self._config_update_button, height=30)
         self._config_update_button.clicked.connect(self._on_config_update)
         self._config_browse_button = QPushButton("📂")
         self._config_browse_button.setFixedSize(34, 30)

@@ -9,6 +9,7 @@ from PySide6.QtGui import QFont, QRegularExpressionValidator
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QFrame,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
@@ -17,6 +18,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QSpinBox,
     QVBoxLayout,
     QWidget,
@@ -32,7 +34,6 @@ from models.utils import hex_to_int, int_to_hex, parse_data_bytes
 logger = get_logger(__name__)
 
 TRIGGER_COUNT = 10
-RESPONSE_COUNT = 5
 CHANNELS = [tr("CAN1"), tr("CAN2"), tr("CAN1 и CAN2")]
 BIT_RATES = [tr("11 бит"), tr("29 бит")]
 
@@ -88,9 +89,17 @@ class CanTriggerTab(QWidget):
         self._build_layout()
         self._load_config()
 
+    def _setup_button(self, button: QPushButton, bold: bool = False, height: int = 32) -> None:
+        """Устанавливает политику размера кнопки по содержимому."""
+        button.setSizePolicy(QSizePolicy.Policy.MinimumExpanding, QSizePolicy.Policy.Preferred)
+        button.setMinimumHeight(height)
+        if bold:
+            button.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
+        button.adjustSize()
+
     def _make_id_edit(self, font: QFont, bit_combo: QComboBox) -> QLineEdit:
         edit = QLineEdit()
-        edit.setFixedWidth(80)
+        edit.setFixedWidth(90)
         edit.setFont(font)
         edit.setMaxLength(8)
         edit.setPlaceholderText("ID")
@@ -101,7 +110,7 @@ class CanTriggerTab(QWidget):
         edits: List[QLineEdit] = []
         for d in range(8):
             edit = QLineEdit()
-            edit.setFixedWidth(36)
+            edit.setFixedWidth(38)
             edit.setFont(font)
             edit.setMaxLength(2)
             edit.setPlaceholderText(f"D{d}")
@@ -144,7 +153,7 @@ class CanTriggerTab(QWidget):
         spin = QSpinBox()
         spin.setRange(0, 9999)
         spin.setValue(0)
-        spin.setSuffix(" ms")
+        spin.setSuffix(tr(" мс"))
         spin.setFont(font)
         spin.setFixedWidth(90)
         return spin
@@ -191,14 +200,14 @@ class CanTriggerTab(QWidget):
         header = QHBoxLayout()
         header.addWidget(QLabel(tr("Фреймы ответа")))
         header.addStretch()
-        add_button = QPushButton("+")
-        add_button.setFixedSize(28, 28)
+        add_button = QPushButton(tr("Добавить фрейм"))
+        self._setup_button(add_button, height=28)
         add_button.setToolTip(tr("Добавить фрейм"))
         header.addWidget(add_button)
         group_layout.addLayout(header)
 
         rows_layout = QVBoxLayout()
-        rows_layout.setSpacing(4)
+        rows_layout.setSpacing(10)
         group_layout.addLayout(rows_layout)
 
         block = {"group": group, "rows_layout": rows_layout, "add_button": add_button, "rows": []}
@@ -207,38 +216,54 @@ class CanTriggerTab(QWidget):
         return block
 
     def _create_response_row(self, font: QFont, block: Dict[str, Any]) -> Dict[str, Any]:
-        """Создаёт одну строку фрейма ответа."""
+        """Создаёт одну строку фрейма ответа с двумя подстроками."""
         widget = QWidget()
-        row_layout = QHBoxLayout(widget)
-        row_layout.setSpacing(4)
-        row_layout.setContentsMargins(0, 0, 0, 0)
+        layout = QVBoxLayout(widget)
+        layout.setSpacing(4)
+        layout.setContentsMargins(0, 0, 0, 0)
 
         channel = self._make_channel_combo(font)
         bit = self._make_bit_combo(font)
         can_id = self._make_id_edit(font, bit)
         dlc = self._make_dlc_spin(font)
         data = self._make_data_edits(font)
-        delay = self._make_delay_spin(font)
 
-        remove_button = QPushButton("–")
-        remove_button.setFixedSize(28, 28)
+        top_row = QHBoxLayout()
+        top_row.setSpacing(4)
+        top_row.setContentsMargins(0, 0, 0, 0)
+        top_row.addWidget(QLabel(tr("Канал")))
+        top_row.addWidget(channel)
+        top_row.addWidget(QLabel(tr("Бит")))
+        top_row.addWidget(bit)
+        top_row.addWidget(QLabel("ID"))
+        top_row.addWidget(can_id)
+        top_row.addWidget(QLabel("DLC"))
+        top_row.addWidget(dlc)
+        top_row.addWidget(QLabel("Data"))
+        for edit in data:
+            top_row.addWidget(edit)
+        top_row.addStretch()
+
+        delay = self._make_delay_spin(font)
+        count = self._make_count_spin(font, 64)
+        count.setSuffix("")
+        remove_button = QPushButton(tr("Удалить фрейм"))
+        self._setup_button(remove_button, height=28)
         remove_button.setToolTip(tr("Удалить фрейм"))
 
-        row_layout.addWidget(QLabel(tr("Канал")))
-        row_layout.addWidget(channel)
-        row_layout.addWidget(QLabel(tr("Бит")))
-        row_layout.addWidget(bit)
-        row_layout.addWidget(QLabel("ID"))
-        row_layout.addWidget(can_id)
-        row_layout.addWidget(QLabel("DLC"))
-        row_layout.addWidget(dlc)
-        row_layout.addWidget(QLabel("Data"))
-        for edit in data:
-            row_layout.addWidget(edit)
-        row_layout.addWidget(QLabel(tr("Задержка мс")))
-        row_layout.addWidget(delay)
-        row_layout.addWidget(remove_button)
-        row_layout.addStretch()
+        bottom_row = QHBoxLayout()
+        bottom_row.setSpacing(4)
+        bottom_row.setContentsMargins(0, 0, 0, 0)
+        bottom_row.addWidget(QLabel(tr("Задержка мс")))
+        bottom_row.addWidget(delay)
+        bottom_row.addSpacing(12)
+        bottom_row.addWidget(QLabel(tr("Кол-во отправок")))
+        bottom_row.addWidget(count)
+        bottom_row.addStretch()
+        bottom_row.addWidget(remove_button)
+
+        layout.addLayout(top_row)
+        layout.addLayout(bottom_row)
 
         dlc.valueChanged.connect(lambda value: self._set_data_enabled(data, value))
         self._set_data_enabled(data, dlc.value())
@@ -251,20 +276,36 @@ class CanTriggerTab(QWidget):
             "dlc": dlc,
             "data": data,
             "delay": delay,
+            "count": count,
             "remove_button": remove_button,
+            "separator": None,
         }
         remove_button.clicked.connect(lambda: self._remove_response_row(block, row))
         return row
 
     def _add_response_row(self, block: Dict[str, Any], font: QFont) -> None:
-        """Добавляет строку фрейма в блок ответа."""
-        row = self._create_response_row(font, block)
-        block["rows"].append(row)
-        block["rows_layout"].addWidget(row["widget"])
+        """Добавляет строку фрейма в блок ответа с разделителем."""
+        if block["rows"]:
+            line = QFrame()
+            line.setFrameShape(QFrame.Shape.HLine)
+            line.setFrameShadow(QFrame.Shadow.Plain)
+            line.setStyleSheet("background-color: #4A4A6A;")
+            line.setFixedHeight(1)
+            line.setContentsMargins(0, 0, 0, 0)
+            block["rows_layout"].addWidget(line)
+            new_row = self._create_response_row(font, block)
+            new_row["separator"] = line
+        else:
+            new_row = self._create_response_row(font, block)
+        block["rows"].append(new_row)
+        block["rows_layout"].addWidget(new_row["widget"])
         self._update_response_buttons(block)
 
     def _remove_response_row(self, block: Dict[str, Any], row: Dict[str, Any]) -> None:
-        """Удаляет строку фрейма из блока ответа."""
+        """Удаляет строку фрейма и предшествующий разделитель из блока ответа."""
+        if row["separator"] is not None:
+            block["rows_layout"].removeWidget(row["separator"])
+            row["separator"].deleteLater()
         block["rows_layout"].removeWidget(row["widget"])
         row["widget"].deleteLater()
         block["rows"].remove(row)
@@ -342,18 +383,15 @@ class CanTriggerTab(QWidget):
         self._font = font
 
         self._apply_button = QPushButton(tr("Применить триггеры"))
-        self._apply_button.setFixedSize(140, 32)
-        self._apply_button.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
+        self._setup_button(self._apply_button, bold=True)
         self._apply_button.clicked.connect(self._apply_triggers)
 
         self._save_button = QPushButton(tr("Сохранить триггеры"))
-        self._save_button.setFixedSize(140, 32)
-        self._save_button.setFont(QFont("Segoe UI", 10))
+        self._setup_button(self._save_button)
         self._save_button.clicked.connect(self._save_triggers)
 
         self._load_button = QPushButton(tr("Загрузить триггеры"))
-        self._load_button.setFixedSize(150, 32)
-        self._load_button.setFont(QFont("Segoe UI", 10))
+        self._setup_button(self._load_button)
         self._load_button.clicked.connect(self._load_triggers)
 
         for i in range(TRIGGER_COUNT):
@@ -493,6 +531,7 @@ class CanTriggerTab(QWidget):
                 "id": can_id,
                 "data": self._parse_data(row["data"]),
                 "delay": row["delay"].value(),
+                "count": row["count"].value(),
             })
         return result
 
@@ -531,6 +570,7 @@ class CanTriggerTab(QWidget):
                     "dlc": row["dlc"].value(),
                     "data": " ".join(e.text() for e in row["data"] if e.text()),
                     "delay": row["delay"].value(),
+                    "count": row["count"].value(),
                 })
             cache = block["cache"]
             config.append({
@@ -596,6 +636,7 @@ class CanTriggerTab(QWidget):
             edit.setText(f"{bytes_data[d]:02X}" if d < len(bytes_data) else "")
         self._set_data_enabled(response["data"], response["dlc"].value())
         response["delay"].setValue(int(data.get("delay", 0)))
+        response["count"].setValue(int(data.get("count", 1)))
 
     def _set_cache(self, cache: Dict[str, Any], data: Dict[str, Any]) -> None:
         cache["bit"].setCurrentIndex(int(data.get("cache_bit", 0)))
@@ -650,17 +691,18 @@ class CanTriggerTab(QWidget):
                 data[i] = parsed[i] & 0xFF
         return bytes(data)
 
-    def _send_frame(self, can_id: int, data: bytes, channel_index: int) -> None:
-        """Отправляет один CAN-кадр в указанный канал."""
+    def _send_frame(self, can_id: int, data: bytes, channel_index: int, count: int = 1) -> None:
+        """Отправляет один или несколько CAN-кадров в указанный канал."""
         if not self._serial_manager.is_open():
             return
-        if channel_index == 0:
-            self._serial_manager.send_data(pack_can_frame(1, can_id, data))
-        elif channel_index == 1:
-            self._serial_manager.send_data(pack_can_frame(2, can_id, data))
-        else:
-            self._serial_manager.send_data(pack_can_frame(1, can_id, data))
-            self._serial_manager.send_data(pack_can_frame(2, can_id, data))
+        for _ in range(max(1, count)):
+            if channel_index == 0:
+                self._serial_manager.send_data(pack_can_frame(1, can_id, data))
+            elif channel_index == 1:
+                self._serial_manager.send_data(pack_can_frame(2, can_id, data))
+            else:
+                self._serial_manager.send_data(pack_can_frame(1, can_id, data))
+                self._serial_manager.send_data(pack_can_frame(2, can_id, data))
 
     def process_frame(self, frame: Dict[str, Any]) -> None:
         if not self._active:
@@ -704,12 +746,13 @@ class CanTriggerTab(QWidget):
         for response in trigger["responses"]:
             cumulative += response["delay"]
             data = self._data_from_response(response)
+            count = response["count"]
             if cumulative == 0:
-                self._send_frame(response["id"], data, response["channel"])
+                self._send_frame(response["id"], data, response["channel"], count)
             else:
                 QTimer.singleShot(
                     cumulative,
-                    lambda cid=response["id"], d=data, ch=response["channel"]: self._send_frame(cid, d, ch),
+                    lambda cid=response["id"], d=data, ch=response["channel"], cnt=count: self._send_frame(cid, d, ch, cnt),
                 )
 
     def _send_cached_frame(self, trigger: Dict[str, Any]) -> None:

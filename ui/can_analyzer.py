@@ -26,6 +26,7 @@ from core.serial_manager import SerialManager
 from models.logger import get_logger
 from models.translations import _ as tr
 from models.utils import format_data_bytes, int_to_hex
+from ui.ui_utils import setup_button
 
 logger = get_logger(__name__)
 
@@ -63,8 +64,7 @@ class CanAnalyzer(QWidget):
         self._duration_spin.setSuffix(tr(" с"))
 
         self._start_button = QPushButton(tr("Начать анализ"))
-        self._start_button.setFont(font)
-        self._start_button.setFixedSize(120, 30)
+        setup_button(self._start_button, height=30)
         self._start_button.clicked.connect(self._on_start_stop)
 
         self._progress = QProgressBar()
@@ -74,19 +74,16 @@ class CanAnalyzer(QWidget):
         self._progress.setTextVisible(True)
 
         self._track_changes_check = QPushButton(tr("Отслеживать изменения"))
-        self._track_changes_check.setFont(font)
+        setup_button(self._track_changes_check, height=28)
         self._track_changes_check.setCheckable(True)
         self._track_changes_check.setChecked(True)
-        self._track_changes_check.setFixedSize(160, 28)
 
         self._export_csv_button = QPushButton(tr("Экспорт CSV"))
-        self._export_csv_button.setFont(font)
-        self._export_csv_button.setFixedSize(110, 28)
+        setup_button(self._export_csv_button, height=28)
         self._export_csv_button.clicked.connect(self._export_csv)
 
         self._export_html_button = QPushButton(tr("Экспорт HTML"))
-        self._export_html_button.setFont(font)
-        self._export_html_button.setFixedSize(110, 28)
+        setup_button(self._export_html_button, height=28)
         self._export_html_button.clicked.connect(self._export_html)
 
         self._table = QTableWidget()

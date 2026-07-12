@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPushButton,
+    QSizePolicy,
     QSpinBox,
     QSplitter,
     QTableWidget,
@@ -38,6 +39,7 @@ from core.serial_manager import SerialManager
 from models.logger import get_logger
 from models.translations import _ as tr
 from models.utils import bytes_to_hex_string, format_data_bytes, hex_to_int, int_to_hex, parse_data_bytes
+from ui.ui_utils import setup_button
 
 logger = get_logger(__name__)
 
@@ -219,23 +221,19 @@ class CanChannelMonitor(QWidget):
         font = QFont("Segoe UI", 9)
 
         self._start_button = QPushButton(tr("Старт"))
-        self._start_button.setFixedSize(60, 24)
-        self._start_button.setFont(font)
+        setup_button(self._start_button)
         self._start_button.clicked.connect(self._start)
 
         self._stop_button = QPushButton(tr("Стоп"))
-        self._stop_button.setFixedSize(60, 24)
-        self._stop_button.setFont(font)
+        setup_button(self._stop_button)
         self._stop_button.clicked.connect(self._stop)
 
         self._clear_button = QPushButton(tr("Очистить"))
-        self._clear_button.setFixedSize(70, 24)
-        self._clear_button.setFont(font)
+        setup_button(self._clear_button)
         self._clear_button.clicked.connect(self._clear)
 
         self._filter_button = QPushButton(tr("Фильтр"))
-        self._filter_button.setFixedSize(70, 24)
-        self._filter_button.setFont(font)
+        setup_button(self._filter_button)
         self._filter_button.clicked.connect(self._show_filter_stub)
 
         self._filter_from = QLineEdit()
@@ -276,6 +274,13 @@ class CanChannelMonitor(QWidget):
         self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._table.customContextMenuRequested.connect(self._show_context_menu)
         self._table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        self._table.setColumnWidth(0, 90)
+        self._table.setColumnWidth(1, 50)
+        self._table.setColumnWidth(2, 220)
+        self._table.setColumnWidth(3, 90)
+        self._table.setColumnWidth(4, 80)
+        self._table.setColumnWidth(5, 90)
+        self._table.setColumnWidth(6, 150)
 
         self._send_bit_combo = QComboBox()
         self._send_bit_combo.setFont(font)
@@ -283,7 +288,7 @@ class CanChannelMonitor(QWidget):
         self._send_bit_combo.setFixedWidth(90)
 
         self._send_id_edit = QLineEdit()
-        self._send_id_edit.setFixedWidth(80)
+        self._send_id_edit.setFixedWidth(90)
         self._send_id_edit.setMaxLength(8)
         self._send_id_edit.setFont(font)
         self._send_id_edit.setPlaceholderText("ID")
@@ -293,12 +298,12 @@ class CanChannelMonitor(QWidget):
         self._send_dlc_spin.setRange(1, 8)
         self._send_dlc_spin.setValue(8)
         self._send_dlc_spin.setFont(font)
-        self._send_dlc_spin.setFixedWidth(50)
+        self._send_dlc_spin.setFixedWidth(45)
 
         self._send_data_edits: List[QLineEdit] = []
         for i in range(8):
             edit = QLineEdit()
-            edit.setFixedWidth(36)
+            edit.setFixedWidth(38)
             edit.setFont(font)
             edit.setMaxLength(2)
             edit.setPlaceholderText(f"D{i}")
@@ -309,17 +314,16 @@ class CanChannelMonitor(QWidget):
         self._send_period_spin = QSpinBox()
         self._send_period_spin.setRange(0, 9999)
         self._send_period_spin.setValue(1000)
-        self._send_period_spin.setSuffix(" ms")
+        self._send_period_spin.setSuffix(tr(" мс"))
         self._send_period_spin.setFont(font)
-        self._send_period_spin.setFixedWidth(90)
+        self._send_period_spin.setFixedWidth(80)
 
         self._send_button = QPushButton(tr("Отправить"))
-        self._send_button.setFixedSize(90, 26)
-        self._send_button.setFont(font)
+        setup_button(self._send_button, height=26)
         self._send_button.clicked.connect(self._send_manual)
 
         self._cyclic_button = QPushButton("∞")
-        self._cyclic_button.setFixedSize(32, 26)
+        self._cyclic_button.setFixedSize(34, 26)
         self._cyclic_button.setFont(font)
         self._cyclic_button.setCheckable(True)
         self._cyclic_button.toggled.connect(self._on_cyclic_toggled)
@@ -357,22 +361,32 @@ class CanChannelMonitor(QWidget):
 
         layout.addWidget(self._table, 1)
 
-        send_layout = QHBoxLayout()
+        send_layout = QVBoxLayout()
         send_layout.setSpacing(4)
-        send_layout.addWidget(QLabel(tr("Бит")))
-        send_layout.addWidget(self._send_bit_combo)
-        send_layout.addWidget(QLabel("ID"))
-        send_layout.addWidget(self._send_id_edit)
-        send_layout.addWidget(QLabel("DLC"))
-        send_layout.addWidget(self._send_dlc_spin)
-        send_layout.addWidget(QLabel(tr("Data")))
+
+        send_top = QHBoxLayout()
+        send_top.setSpacing(4)
+        send_top.addWidget(QLabel(tr("Бит")))
+        send_top.addWidget(self._send_bit_combo)
+        send_top.addWidget(QLabel("ID"))
+        send_top.addWidget(self._send_id_edit)
+        send_top.addWidget(QLabel("DLC"))
+        send_top.addWidget(self._send_dlc_spin)
+        send_top.addWidget(QLabel(tr("Data")))
         for edit in self._send_data_edits:
-            send_layout.addWidget(edit)
-        send_layout.addWidget(QLabel(tr("Период")))
-        send_layout.addWidget(self._send_period_spin)
-        send_layout.addWidget(self._send_button)
-        send_layout.addWidget(self._cyclic_button)
-        send_layout.addStretch()
+            send_top.addWidget(edit)
+        send_top.addStretch()
+
+        send_bottom = QHBoxLayout()
+        send_bottom.setSpacing(4)
+        send_bottom.addWidget(QLabel(tr("Период")))
+        send_bottom.addWidget(self._send_period_spin)
+        send_bottom.addWidget(self._send_button)
+        send_bottom.addWidget(self._cyclic_button)
+        send_bottom.addStretch()
+
+        send_layout.addLayout(send_top)
+        send_layout.addLayout(send_bottom)
         layout.addLayout(send_layout)
 
         layout.addWidget(self._stats_label)
@@ -726,18 +740,15 @@ class CanMonitorTab(QWidget):
 
     def _create_widgets(self) -> None:
         self._start_all_button = QPushButton(tr("Запустить оба"))
-        self._start_all_button.setFixedSize(110, 28)
-        self._start_all_button.setFont(QFont("Segoe UI", 9))
+        setup_button(self._start_all_button)
         self._start_all_button.clicked.connect(self._start_all)
 
         self._stop_all_button = QPushButton(tr("Остановить оба"))
-        self._stop_all_button.setFixedSize(110, 28)
-        self._stop_all_button.setFont(QFont("Segoe UI", 9))
+        setup_button(self._stop_all_button)
         self._stop_all_button.clicked.connect(self._stop_all)
 
         self._clear_all_button = QPushButton(tr("Очистить всё"))
-        self._clear_all_button.setFixedSize(110, 28)
-        self._clear_all_button.setFont(QFont("Segoe UI", 9))
+        setup_button(self._clear_all_button)
         self._clear_all_button.clicked.connect(self._clear_all)
 
         self._splitter = QSplitter(Qt.Orientation.Horizontal)
