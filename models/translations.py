@@ -501,6 +501,7 @@ class Translator:
                 "Кол-во": "Qty",
                 "Кол-во отправок": "Send count",
                 "Поиск по разделам...": "Search sections...",
+                "Пауза перед следующим:": "Pause before next:",
                 "Data": "Data",
                 "DLC": "DLC",
                 "ID": "ID",

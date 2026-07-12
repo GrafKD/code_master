@@ -177,20 +177,25 @@ QLabel[title="true"] {
 QCheckBox {
     color: $text;
     spacing: 8px;
+    font-size: 10pt;
 }
 QCheckBox::indicator {
     width: 18px;
     height: 18px;
     border-radius: 4px;
-    border: 1px solid $border;
-    background-color: $bg_widget;
+    border: 1px solid #6C8CFF;
+    background-color: #2B2B3C;
+    color: #FFFFFF;
 }
 QCheckBox::indicator:checked {
-    background-color: $accent;
-    border-color: $accent;
+    background-color: #6C8CFF;
+    border-color: #6C8CFF;
+    image: none;
+    color: #FFFFFF;
 }
 QCheckBox::indicator:hover {
-    border-color: $accent;
+    background-color: #3A3A5A;
+    border-color: #6C8CFF;
 }
 QRadioButton {
     color: $text;
@@ -207,10 +212,21 @@ QRadioButton::indicator:checked {
     background-color: $accent;
     border-color: $accent;
 }
+QSpinBox {
+    min-width: 50px;
+    min-height: 24px;
+    font-size: 11pt;
+    color: $text;
+    background-color: $bg_widget;
+    border: 1px solid $border;
+    border-radius: 6px;
+    padding: 2px 4px;
+}
 QSpinBox::up-button, QSpinBox::down-button {
     background-color: $bg_button;
     border: 1px solid $border;
     width: 18px;
+    min-height: 10px;
 }
 QSpinBox::up-button:hover, QSpinBox::down-button:hover {
     background-color: $bg_button_hover;

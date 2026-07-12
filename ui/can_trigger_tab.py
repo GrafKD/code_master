@@ -34,6 +34,7 @@ from models.utils import hex_to_int, int_to_hex, parse_data_bytes
 logger = get_logger(__name__)
 
 TRIGGER_COUNT = 10
+MAX_RESPONSE_FRAMES = 5
 CHANNELS = [tr("CAN1"), tr("CAN2"), tr("CAN1 и CAN2")]
 BIT_RATES = [tr("11 бит"), tr("29 бит")]
 
@@ -110,7 +111,7 @@ class CanTriggerTab(QWidget):
         edits: List[QLineEdit] = []
         for d in range(8):
             edit = QLineEdit()
-            edit.setFixedWidth(38)
+            edit.setFixedWidth(35)
             edit.setFont(font)
             edit.setMaxLength(2)
             edit.setPlaceholderText(f"D{d}")
@@ -200,14 +201,16 @@ class CanTriggerTab(QWidget):
         header = QHBoxLayout()
         header.addWidget(QLabel(tr("Фреймы ответа")))
         header.addStretch()
-        add_button = QPushButton(tr("Добавить фрейм"))
-        self._setup_button(add_button, height=28)
+        add_button = QPushButton("+")
+        add_button.setFixedSize(30, 30)
+        add_button.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
+        add_button.setStyleSheet("QPushButton { background-color: #3A3A5A; color: #FFFFFF; border: none; border-radius: 4px; }")
         add_button.setToolTip(tr("Добавить фрейм"))
         header.addWidget(add_button)
         group_layout.addLayout(header)
 
         rows_layout = QVBoxLayout()
-        rows_layout.setSpacing(10)
+        rows_layout.setSpacing(4)
         group_layout.addLayout(rows_layout)
 
         block = {"group": group, "rows_layout": rows_layout, "add_button": add_button, "rows": []}
@@ -216,11 +219,11 @@ class CanTriggerTab(QWidget):
         return block
 
     def _create_response_row(self, font: QFont, block: Dict[str, Any]) -> Dict[str, Any]:
-        """Создаёт одну строку фрейма ответа с двумя подстроками."""
+        """Создаёт одну строку фрейма ответа с полями в одном ряду."""
         widget = QWidget()
-        layout = QVBoxLayout(widget)
-        layout.setSpacing(4)
-        layout.setContentsMargins(0, 0, 0, 0)
+        row_layout = QHBoxLayout(widget)
+        row_layout.setSpacing(2)
+        row_layout.setContentsMargins(0, 0, 0, 0)
 
         channel = self._make_channel_combo(font)
         bit = self._make_bit_combo(font)
@@ -228,45 +231,40 @@ class CanTriggerTab(QWidget):
         dlc = self._make_dlc_spin(font)
         data = self._make_data_edits(font)
 
-        top_row = QHBoxLayout()
-        top_row.setSpacing(4)
-        top_row.setContentsMargins(0, 0, 0, 0)
-        top_row.addWidget(QLabel(tr("Канал")))
-        top_row.addWidget(channel)
-        top_row.addWidget(QLabel(tr("Бит")))
-        top_row.addWidget(bit)
-        top_row.addWidget(QLabel("ID"))
-        top_row.addWidget(can_id)
-        top_row.addWidget(QLabel("DLC"))
-        top_row.addWidget(dlc)
-        top_row.addWidget(QLabel("Data"))
-        for edit in data:
-            top_row.addWidget(edit)
-        top_row.addStretch()
-
         delay = self._make_delay_spin(font)
-        count = self._make_count_spin(font, 64)
-        count.setSuffix("")
-        remove_button = QPushButton(tr("Удалить фрейм"))
-        self._setup_button(remove_button, height=28)
+        delay.setFixedWidth(80)
+        count = self._make_count_spin(font, 999)
+        count.setFixedWidth(60)
+
+        remove_button = QPushButton("\u2013")
+        remove_button.setFixedSize(30, 30)
+        remove_button.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
+        remove_button.setStyleSheet("QPushButton { background-color: #3A3A5A; color: #FFFFFF; border: none; border-radius: 4px; }")
         remove_button.setToolTip(tr("Удалить фрейм"))
 
-        bottom_row = QHBoxLayout()
-        bottom_row.setSpacing(4)
-        bottom_row.setContentsMargins(0, 0, 0, 0)
-        bottom_row.addWidget(QLabel(tr("Задержка мс")))
-        bottom_row.addWidget(delay)
-        bottom_row.addSpacing(12)
-        bottom_row.addWidget(QLabel(tr("Кол-во отправок")))
-        bottom_row.addWidget(count)
-        bottom_row.addStretch()
-        bottom_row.addWidget(remove_button)
-
-        layout.addLayout(top_row)
-        layout.addLayout(bottom_row)
+        row_layout.addWidget(QLabel(tr("Канал")))
+        row_layout.addWidget(channel)
+        row_layout.addWidget(QLabel(tr("Бит")))
+        row_layout.addWidget(bit)
+        row_layout.addWidget(QLabel("ID"))
+        row_layout.addWidget(can_id)
+        row_layout.addWidget(QLabel("DLC"))
+        row_layout.addWidget(dlc)
+        for edit in data:
+            row_layout.addWidget(edit)
+        row_layout.addStretch()
+        row_layout.addWidget(QLabel(tr("Задержка")))
+        row_layout.addWidget(delay)
+        row_layout.addWidget(QLabel(tr("Кол-во")))
+        row_layout.addWidget(count)
+        row_layout.addWidget(remove_button)
 
         dlc.valueChanged.connect(lambda value: self._set_data_enabled(data, value))
         self._set_data_enabled(data, dlc.value())
+
+        next_delay = self._make_delay_spin(font)
+        next_delay.setFixedWidth(80)
+        pause_widget = self._create_pause_widget(font, next_delay)
 
         row = {
             "widget": widget,
@@ -277,42 +275,75 @@ class CanTriggerTab(QWidget):
             "data": data,
             "delay": delay,
             "count": count,
+            "next_delay": next_delay,
+            "pause_widget": pause_widget,
             "remove_button": remove_button,
-            "separator": None,
         }
         remove_button.clicked.connect(lambda: self._remove_response_row(block, row))
         return row
 
+    def _create_pause_widget(self, font: QFont, spin: QSpinBox) -> QWidget:
+        """Создаёт виджет паузы между фреймами с разделителем."""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setSpacing(2)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        line = QFrame()
+        line.setFrameShape(QFrame.Shape.HLine)
+        line.setFrameShadow(QFrame.Shadow.Plain)
+        line.setStyleSheet("background-color: #4A4A6A;")
+        line.setFixedHeight(1)
+        line.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(line)
+
+        row = QHBoxLayout()
+        row.setSpacing(4)
+        row.addStretch()
+        row.addWidget(QLabel(tr("Пауза перед следующим:")))
+        row.addWidget(spin)
+        row.addStretch()
+        layout.addLayout(row)
+
+        return widget
+
     def _add_response_row(self, block: Dict[str, Any], font: QFont) -> None:
-        """Добавляет строку фрейма в блок ответа с разделителем."""
-        if block["rows"]:
-            line = QFrame()
-            line.setFrameShape(QFrame.Shape.HLine)
-            line.setFrameShadow(QFrame.Shadow.Plain)
-            line.setStyleSheet("background-color: #4A4A6A;")
-            line.setFixedHeight(1)
-            line.setContentsMargins(0, 0, 0, 0)
-            block["rows_layout"].addWidget(line)
-            new_row = self._create_response_row(font, block)
-            new_row["separator"] = line
-        else:
-            new_row = self._create_response_row(font, block)
+        """Добавляет строку фрейма в блок ответа (максимум 5)."""
+        if len(block["rows"]) >= MAX_RESPONSE_FRAMES:
+            return
+        new_row = self._create_response_row(font, block)
         block["rows"].append(new_row)
-        block["rows_layout"].addWidget(new_row["widget"])
+        self._rebuild_response_rows(block)
         self._update_response_buttons(block)
 
     def _remove_response_row(self, block: Dict[str, Any], row: Dict[str, Any]) -> None:
-        """Удаляет строку фрейма и предшествующий разделитель из блока ответа."""
-        if row["separator"] is not None:
-            block["rows_layout"].removeWidget(row["separator"])
-            row["separator"].deleteLater()
-        block["rows_layout"].removeWidget(row["widget"])
-        row["widget"].deleteLater()
+        """Удаляет строку фрейма из блока ответа (минимум 1)."""
+        if len(block["rows"]) <= 1:
+            return
         block["rows"].remove(row)
+        row["widget"].deleteLater()
+        row["pause_widget"].deleteLater()
+        self._rebuild_response_rows(block)
         self._update_response_buttons(block)
 
+    def _rebuild_response_rows(self, block: Dict[str, Any]) -> None:
+        """Перестраивает layout фреймов и видимость пауз."""
+        for row in block["rows"]:
+            block["rows_layout"].removeWidget(row["widget"])
+            row["widget"].hide()
+            block["rows_layout"].removeWidget(row["pause_widget"])
+            row["pause_widget"].hide()
+        for i, row in enumerate(block["rows"]):
+            block["rows_layout"].addWidget(row["widget"])
+            row["widget"].show()
+            if i < len(block["rows"]) - 1:
+                block["rows_layout"].addWidget(row["pause_widget"])
+                row["pause_widget"].show()
+
     def _update_response_buttons(self, block: Dict[str, Any]) -> None:
-        """Активирует/деактивирует кнопки удаления в зависимости от количества строк."""
+        """Активирует/деактивирует кнопки +/- в зависимости от количества строк."""
+        can_add = len(block["rows"]) < MAX_RESPONSE_FRAMES
+        block["add_button"].setEnabled(can_add)
         for row in block["rows"]:
             row["remove_button"].setEnabled(len(block["rows"]) > 1)
 
@@ -325,6 +356,9 @@ class CanTriggerTab(QWidget):
 
         row1 = QHBoxLayout()
         row1.setSpacing(4)
+        row1.addWidget(QLabel(tr("Канал")))
+        channel = self._make_channel_combo(font)
+        row1.addWidget(channel)
         row1.addWidget(QLabel(tr("Бит")))
         bit = self._make_bit_combo(font)
         row1.addWidget(bit)
@@ -334,6 +368,14 @@ class CanTriggerTab(QWidget):
         row1.addWidget(QLabel("DLC"))
         dlc = self._make_dlc_spin(font)
         row1.addWidget(dlc)
+        row1.addWidget(QLabel(tr("Задержка мс")))
+        delay = self._make_delay_spin(font)
+        delay.setSuffix("")
+        row1.addWidget(delay)
+        row1.addWidget(QLabel(tr("Кол-во отправок")))
+        count = self._make_count_spin(font, 999)
+        count.setSuffix("")
+        row1.addWidget(count)
         row1.addStretch()
 
         row2 = QHBoxLayout()
@@ -359,11 +401,14 @@ class CanTriggerTab(QWidget):
 
         return {
             "group": group,
+            "channel": channel,
             "bit": bit,
             "id": can_id,
             "dlc": dlc,
             "from_data": from_data,
             "to_data": to_data,
+            "delay": delay,
+            "count": count,
         }
 
     def _set_data_enabled(self, edits: List[QLineEdit], count: int) -> None:
@@ -397,6 +442,8 @@ class CanTriggerTab(QWidget):
         for i in range(TRIGGER_COUNT):
             group = QGroupBox(tr("Триггер {0}").format(i + 1))
             group.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
+            group.setCheckable(True)
+            group.setChecked(True)
 
             active = QCheckBox(tr("Активен"))
             active.setFont(font)
@@ -452,19 +499,28 @@ class CanTriggerTab(QWidget):
             group_layout.setSpacing(5)
             group_layout.setContentsMargins(6, 6, 6, 6)
 
+            content = QWidget()
+            content_layout = QVBoxLayout(content)
+            content_layout.setSpacing(5)
+            content_layout.setContentsMargins(6, 6, 6, 6)
+
             top = QHBoxLayout()
             top.addWidget(block["active"])
             top.addWidget(block["cache_check"])
             top.addWidget(block["cache_active"])
             top.addStretch()
-            group_layout.addLayout(top)
+            content_layout.addLayout(top)
 
-            group_layout.addLayout(block["recv"]["layout"])
+            content_layout.addLayout(block["recv"]["layout"])
 
-            group_layout.addWidget(block["response"]["group"])
+            content_layout.addWidget(block["response"]["group"])
 
-            group_layout.addWidget(block["cache"]["group"])
+            content_layout.addWidget(block["cache"]["group"])
             self._set_cache_enabled(block, False)
+
+            group_layout.addWidget(content)
+            block["group"].toggled.connect(lambda checked, content=content: content.setVisible(checked))
+            block["content"] = content
 
             container_layout.addWidget(block["group"])
 
@@ -532,6 +588,7 @@ class CanTriggerTab(QWidget):
                 "data": self._parse_data(row["data"]),
                 "delay": row["delay"].value(),
                 "count": row["count"].value(),
+                "next_delay": row["next_delay"].value(),
             })
         return result
 
@@ -539,10 +596,12 @@ class CanTriggerTab(QWidget):
         can_id = self._parse_id(cache["id"].text())
         return {
             "id": can_id,
-            "channel": 0,
+            "channel": cache["channel"].currentIndex(),
             "data_from": self._parse_data(cache["from_data"]),
             "data_to": self._parse_data(cache["to_data"]),
             "dlc": cache["dlc"].value(),
+            "delay": cache["delay"].value(),
+            "count": cache["count"].value(),
         }
 
     def _apply_triggers(self) -> None:
@@ -571,6 +630,7 @@ class CanTriggerTab(QWidget):
                     "data": " ".join(e.text() for e in row["data"] if e.text()),
                     "delay": row["delay"].value(),
                     "count": row["count"].value(),
+                    "next_delay": row["next_delay"].value(),
                 })
             cache = block["cache"]
             config.append({
@@ -582,11 +642,14 @@ class CanTriggerTab(QWidget):
                 "recv_dlc": block["recv"]["dlc"].value(),
                 "recv_data": " ".join(e.text() for e in block["recv"]["data"] if e.text()),
                 "responses": responses,
+                "cache_channel": cache["channel"].currentIndex(),
                 "cache_bit": cache["bit"].currentIndex(),
                 "cache_id": cache["id"].text(),
                 "cache_dlc": cache["dlc"].value(),
                 "cache_from_data": " ".join(e.text() for e in cache["from_data"] if e.text()),
                 "cache_to_data": " ".join(e.text() for e in cache["to_data"] if e.text()),
+                "cache_delay": cache["delay"].value(),
+                "cache_count": cache["count"].value(),
             })
         return config
 
@@ -637,11 +700,15 @@ class CanTriggerTab(QWidget):
         self._set_data_enabled(response["data"], response["dlc"].value())
         response["delay"].setValue(int(data.get("delay", 0)))
         response["count"].setValue(int(data.get("count", 1)))
+        response["next_delay"].setValue(int(data.get("next_delay", 0)))
 
     def _set_cache(self, cache: Dict[str, Any], data: Dict[str, Any]) -> None:
+        cache["channel"].setCurrentIndex(int(data.get("cache_channel", 0)))
         cache["bit"].setCurrentIndex(int(data.get("cache_bit", 0)))
         cache["id"].setText(str(data.get("cache_id", "")))
         cache["dlc"].setValue(int(data.get("cache_dlc", 8)))
+        cache["delay"].setValue(int(data.get("cache_delay", 0)))
+        cache["count"].setValue(int(data.get("cache_count", 1)))
         from_bytes = parse_data_bytes(str(data.get("cache_from_data", "")).split())
         to_bytes = parse_data_bytes(str(data.get("cache_to_data", "")).split())
         for d, edit in enumerate(cache["from_data"]):
@@ -741,9 +808,9 @@ class CanTriggerTab(QWidget):
         return True
 
     def _send_responses(self, trigger: Dict[str, Any]) -> None:
-        """Последовательно отправляет фреймы ответа с указанными задержками."""
+        """Последовательно отправляет фреймы ответа с задержками и паузами."""
         cumulative = 0
-        for response in trigger["responses"]:
+        for i, response in enumerate(trigger["responses"]):
             cumulative += response["delay"]
             data = self._data_from_response(response)
             count = response["count"]
@@ -754,13 +821,25 @@ class CanTriggerTab(QWidget):
                     cumulative,
                     lambda cid=response["id"], d=data, ch=response["channel"], cnt=count: self._send_frame(cid, d, ch, cnt),
                 )
+            if i < len(trigger["responses"]) - 1:
+                cumulative += response["next_delay"]
 
     def _send_cached_frame(self, trigger: Dict[str, Any]) -> None:
-        """Отправляет последний сохранённый кадр из кэша."""
+        """Отправляет последний сохранённый кадр из кэша с задержкой и повторами."""
         cached = trigger.get("cached_frame")
         if cached is None:
             return
-        self._send_frame(cached["id"], cached["data"], trigger["recv_channel"])
+        cache = trigger["cache_data"]
+        channel = cache["channel"]
+        delay = cache["delay"]
+        count = cache["count"]
+        if delay == 0:
+            self._send_frame(cached["id"], cached["data"], channel, count)
+        else:
+            QTimer.singleShot(
+                delay,
+                lambda cid=cached["id"], d=cached["data"], ch=channel, cnt=count: self._send_frame(cid, d, ch, cnt),
+            )
 
     def _update_cache(self, trigger: Dict[str, Any], frame_id: int, frame_channel: int, data: bytes) -> None:
         """Сохраняет кадр в кэш, если он попадает в заданный диапазон."""

@@ -40,8 +40,8 @@ class SettingsWindow(QMainWindow):
         self._serial_manager = serial_manager
         self._config = Config()
         self.setWindowTitle(tr("Настройки — Код Мастер"))
-        self.resize(900, 650)
-        self.setMinimumSize(700, 500)
+        self.resize(1100, 700)
+        self.setMinimumSize(850, 500)
 
         central = QWidget(self)
         self.setCentralWidget(central)
