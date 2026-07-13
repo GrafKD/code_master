@@ -15,7 +15,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QMessageBox,
     QPushButton,
     QScrollArea,
     QSizePolicy,
@@ -30,6 +29,8 @@ from models.config import Config
 from models.logger import get_logger
 from models.translations import _ as tr
 from models.utils import hex_to_int, int_to_hex, parse_data_bytes
+from ui.hex_edit import HexDataEdit
+from ui.id_edit import IdPasteEdit
 
 logger = get_logger(__name__)
 
@@ -92,8 +93,6 @@ class CanTriggerTab(QWidget):
         super().__init__(parent)
         self._serial_manager = serial_manager
         self._config = Config()
-        self._active = False
-        self._internal_triggers: List[Dict[str, Any]] = []
         self._blocks: List[Dict[str, Any]] = []
 
         self._create_widgets()
@@ -108,8 +107,8 @@ class CanTriggerTab(QWidget):
             button.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
         button.adjustSize()
 
-    def _make_id_edit(self, font: QFont, bit_combo: QComboBox) -> QLineEdit:
-        edit = QLineEdit()
+    def _make_id_edit(self, font: QFont, bit_combo: QComboBox) -> IdPasteEdit:
+        edit = IdPasteEdit()
         edit.setFixedWidth(90)
         edit.setFont(font)
         edit.setPlaceholderText("ID")
@@ -119,27 +118,13 @@ class CanTriggerTab(QWidget):
     def _make_data_edits(self, font: QFont) -> List[QLineEdit]:
         edits: List[QLineEdit] = []
         for d in range(8):
-            edit = QLineEdit()
+            edit = HexDataEdit(f"D{d}")
             edit.setFixedWidth(35)
             edit.setFont(font)
-            edit.setMaxLength(2)
-            edit.setPlaceholderText(f"D{d}")
-            edit.setValidator(QRegularExpressionValidator(QRegularExpression("[0-9A-Fa-f]{0,2}")))
-            edit.textChanged.connect(lambda text, idx=d, lst=edits: self._on_data_text_changed(lst, idx, text))
             edits.append(edit)
+        for edit in edits:
+            edit.set_siblings(edits)
         return edits
-
-    def _on_data_text_changed(self, edits: List[QLineEdit], index: int, text: str) -> None:
-        """Приводит HEX к верхнему регистру и переводит фокус на следующее поле при вводе 2 символов."""
-        upper = text.upper()
-        edit = edits[index]
-        if text != upper:
-            edit.blockSignals(True)
-            edit.setText(upper)
-            edit.blockSignals(False)
-            text = upper
-        if len(text) == 2 and index + 1 < len(edits):
-            edits[index + 1].setFocus()
 
     def _make_channel_combo(self, font: QFont) -> QComboBox:
         combo = QComboBox()
@@ -202,7 +187,7 @@ class CanTriggerTab(QWidget):
         dlc.valueChanged.connect(lambda value: self._set_data_enabled(data, value))
         self._set_data_enabled(data, dlc.value())
 
-        return {
+        row = {
             "layout": layout,
             "channel": channel,
             "bit": bit,
@@ -210,6 +195,8 @@ class CanTriggerTab(QWidget):
             "dlc": dlc,
             "data": data,
         }
+        can_id.set_fill_callback(lambda parsed, r=row: self._fill_row_from_packet(r, parsed))
+        return row
 
     def _create_response_block(self, font: QFont) -> Dict[str, Any]:
         """Создаёт блок динамического списка фреймов ответа."""
@@ -224,11 +211,11 @@ class CanTriggerTab(QWidget):
         header.addWidget(header_label)
         header.addStretch()
         add_button = QPushButton("+")
-        add_button.setFixedSize(26, 26)
-        add_button.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
+        add_button.setFixedSize(32, 32)
+        add_button.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
         add_button.setStyleSheet(
-            "QPushButton { background-color: #3A3A5A; color: #FFFFFF; border: none; border-radius: 4px; }"
-            "QPushButton:hover { background-color: #4A4A6A; }"
+            "QPushButton { background-color: #4A4A6A; color: #FFFFFF; border: none; border-radius: 4px; }"
+            "QPushButton:hover { background-color: #5A5A7A; }"
         )
         add_button.setToolTip(tr("Добавить фрейм"))
         header.addWidget(add_button)
@@ -262,11 +249,11 @@ class CanTriggerTab(QWidget):
         count.setFixedWidth(60)
 
         remove_button = QPushButton("\u2013")
-        remove_button.setFixedSize(26, 26)
-        remove_button.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
+        remove_button.setFixedSize(32, 32)
+        remove_button.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
         remove_button.setStyleSheet(
-            "QPushButton { background-color: #3A3A5A; color: #FFFFFF; border: none; border-radius: 4px; }"
-            "QPushButton:hover { background-color: #4A4A6A; }"
+            "QPushButton { background-color: #4A4A6A; color: #FFFFFF; border: none; border-radius: 4px; }"
+            "QPushButton:hover { background-color: #5A5A7A; }"
         )
         remove_button.setToolTip(tr("Удалить фрейм"))
 
@@ -308,6 +295,7 @@ class CanTriggerTab(QWidget):
             "remove_button": remove_button,
         }
         remove_button.clicked.connect(lambda: self._remove_response_row(block, row))
+        can_id.set_fill_callback(lambda parsed, r=row: self._fill_row_from_packet(r, parsed))
         return row
 
     def _create_pause_widget(self, font: QFont, spin: QSpinBox) -> QWidget:
@@ -438,7 +426,7 @@ class CanTriggerTab(QWidget):
         fields_layout.addLayout(row2)
         group_layout.addWidget(fields_widget)
 
-        return {
+        cache = {
             "group": group,
             "cache_check": cache_check,
             "fields_widget": fields_widget,
@@ -451,26 +439,53 @@ class CanTriggerTab(QWidget):
             "delay": delay,
             "count": count,
         }
+        can_id.set_fill_callback(lambda parsed, c=cache: self._fill_cache_from_packet(c, parsed))
+        return cache
 
     def _set_data_enabled(self, edits: List[QLineEdit], count: int) -> None:
         for i, edit in enumerate(edits):
-            edit.setEnabled(i < count)
+            if i >= count:
+                edit.setText("")
+                edit.setEnabled(False)
+            else:
+                edit.setEnabled(True)
+
+    def _fill_row_from_packet(self, row: Dict[str, Any], parsed: Dict[str, Any]) -> None:
+        """Заполняет строку (ID, DLC, Data) из распарсенного пакета."""
+        can_id = parsed.get("id")
+        if can_id is None:
+            return
+        bit_index = 1 if can_id > 0x7FF else 0
+        row["bit"].setCurrentIndex(bit_index)
+        row["id"].setText(int_to_hex(can_id, 8 if can_id > 0x7FF else 3))
+        dlc = max(1, min(8, parsed.get("dlc", 8)))
+        row["dlc"].setValue(dlc)
+        data = parsed.get("data", [])
+        for i, edit in enumerate(row["data"]):
+            edit.setText(f"{data[i]:02X}" if i < len(data) else "")
+        self._set_data_enabled(row["data"], dlc)
+
+    def _fill_cache_from_packet(self, cache: Dict[str, Any], parsed: Dict[str, Any]) -> None:
+        """Заполняет кэш (ID, DLC, From Data) из распарсенного пакета."""
+        can_id = parsed.get("id")
+        if can_id is None:
+            return
+        bit_index = 1 if can_id > 0x7FF else 0
+        cache["bit"].setCurrentIndex(bit_index)
+        cache["id"].setText(int_to_hex(can_id, 8 if can_id > 0x7FF else 3))
+        dlc = max(1, min(8, parsed.get("dlc", 8)))
+        cache["dlc"].setValue(dlc)
+        data = parsed.get("data", [])
+        for i, edit in enumerate(cache["from_data"]):
+            edit.setText(f"{data[i]:02X}" if i < len(data) else "")
+        for i, edit in enumerate(cache["to_data"]):
+            edit.setText(f"{data[i]:02X}" if i < len(data) else "")
+        self._set_data_enabled(cache["from_data"], dlc)
+        self._set_data_enabled(cache["to_data"], dlc)
 
     def _create_widgets(self) -> None:
         font = QFont("Segoe UI", 9)
         self._font = font
-
-        self._apply_button = QPushButton(tr("Применить триггеры"))
-        self._setup_button(self._apply_button, bold=True)
-        self._apply_button.clicked.connect(self._apply_triggers)
-
-        self._save_button = QPushButton(tr("Сохранить триггеры"))
-        self._setup_button(self._save_button)
-        self._save_button.clicked.connect(self._save_triggers)
-
-        self._load_button = QPushButton(tr("Загрузить триггеры"))
-        self._setup_button(self._load_button)
-        self._load_button.clicked.connect(self._load_triggers)
 
         for i in range(TRIGGER_COUNT):
             group = QGroupBox(tr("Триггер {0}").format(i + 1))
@@ -497,14 +512,6 @@ class CanTriggerTab(QWidget):
         container_layout = QVBoxLayout(container)
         container_layout.setSpacing(10)
         container_layout.setContentsMargins(8, 8, 8, 8)
-
-        buttons = QHBoxLayout()
-        buttons.setSpacing(8)
-        buttons.addWidget(self._apply_button)
-        buttons.addWidget(self._save_button)
-        buttons.addWidget(self._load_button)
-        buttons.addStretch()
-        container_layout.addLayout(buttons)
 
         for block in self._blocks:
             group_layout = QVBoxLayout(block["group"])
@@ -550,9 +557,6 @@ class CanTriggerTab(QWidget):
 
     def retranslate_ui(self) -> None:
         """Обновляет статические строки вкладки триггеров."""
-        self._apply_button.setText(tr("Применить триггеры"))
-        self._save_button.setText(tr("Сохранить триггеры"))
-        self._load_button.setText(tr("Загрузить триггеры"))
         for i, block in enumerate(self._blocks):
             block["group"].setTitle(tr("Триггер {0}").format(i + 1))
             block["cache"]["cache_check"].setText(tr("Автоматическая запись DATA в Кэш"))
@@ -624,12 +628,6 @@ class CanTriggerTab(QWidget):
             "delay": cache["delay"].value(),
             "count": cache["count"].value(),
         }
-
-    def _apply_triggers(self) -> None:
-        self._internal_triggers = self._build_internal_triggers()
-        self._active = bool(self._internal_triggers)
-        logger.info("Триггеры применены: %d активных", len(self._internal_triggers))
-        QMessageBox.information(self, tr("Готово"), tr("Триггеры применены: {0}").format(len(self._internal_triggers)))
 
     def _load_config(self) -> None:
         triggers = self._config.get("triggers", [])
@@ -738,36 +736,6 @@ class CanTriggerTab(QWidget):
         self._set_data_enabled(cache["from_data"], cache["dlc"].value())
         self._set_data_enabled(cache["to_data"], cache["dlc"].value())
 
-    def _save_triggers(self) -> None:
-        self._save_config()
-        path, _ = Path(""), None
-        from PySide6.QtWidgets import QFileDialog
-        path, _ = QFileDialog.getSaveFileName(self, tr("Сохранить триггеры"), "", "JSON files (*.json)")
-        if not path:
-            return
-        try:
-            Path(path).write_text(json.dumps(self._collect_config(), ensure_ascii=False, indent=2), encoding="utf-8")
-            logger.info("Триггеры сохранены в %s", path)
-        except Exception as exc:  # noqa: BLE001
-            logger.error("Ошибка сохранения триггеров: %s", exc)
-            QMessageBox.critical(self, tr("Ошибка"), tr("Не удалось сохранить триггеры: {0}").format(exc))
-
-    def _load_triggers(self) -> None:
-        from PySide6.QtWidgets import QFileDialog
-        path, _ = QFileDialog.getOpenFileName(self, tr("Загрузить триггеры"), "", "JSON files (*.json)")
-        if not path:
-            return
-        try:
-            triggers = json.loads(Path(path).read_text(encoding="utf-8"))
-            if not isinstance(triggers, list):
-                raise ValueError(tr("Файл должен содержать список триггеров"))
-            self.set_config(triggers)
-            self._save_config()
-            logger.info("Триггеры загружены из %s", path)
-        except Exception as exc:  # noqa: BLE001
-            logger.error("Ошибка загрузки триггеров: %s", exc)
-            QMessageBox.critical(self, tr("Ошибка"), tr("Не удалось загрузить триггеры: {0}").format(exc))
-
     def _data_from_response(self, response: Dict[str, Any]) -> bytes:
         """Формирует байты данных фрейма ответа с учётом DLC."""
         dlc = response["dlc"].value()
@@ -792,13 +760,11 @@ class CanTriggerTab(QWidget):
                 self._serial_manager.send_data(pack_can_frame(2, can_id, data))
 
     def process_frame(self, frame: Dict[str, Any]) -> None:
-        if not self._active:
-            return
         frame_id = int(frame["id"])
         frame_channel = int(frame["channel"])
         data = bytes(frame["data"])
 
-        for trigger in self._internal_triggers:
+        for trigger in self._build_internal_triggers():
             self._update_cache(trigger, frame_id, frame_channel, data)
             if not self._match_condition(trigger, frame_id, frame_channel, data):
                 continue

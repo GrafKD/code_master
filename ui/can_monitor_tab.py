@@ -7,10 +7,9 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, TextIO
 
 from PySide6.QtCore import QRegularExpression, Qt, QTimer, Signal
-from PySide6.QtGui import QFont, QRegularExpressionValidator
+from PySide6.QtGui import QColor, QFont, QRegularExpressionValidator
 from PySide6.QtWidgets import (
     QApplication,
-    QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -39,13 +38,14 @@ from core.serial_manager import SerialManager
 from models.logger import get_logger
 from models.translations import _ as tr
 from models.utils import bytes_to_hex_string, format_data_bytes, hex_to_int, int_to_hex, parse_data_bytes
+from ui.filter_dialog import FilterDialog
+from ui.hex_edit import HexDataEdit
+from ui.id_edit import IdPasteEdit
 from ui.ui_utils import setup_button
 
 logger = get_logger(__name__)
 
 MAX_TABLE_ROWS = 50_000
-HIGHLIGHT_COLOR = "#4A6A8A"
-HIGHLIGHT_MS = 2000
 
 BIT_RATES = [tr("11 бит"), tr("29 бит")]
 
@@ -200,8 +200,7 @@ class CanChannelMonitor(QWidget):
         self._channel = channel
         self._channel_byte = channel
         self._serial_manager = serial_manager
-        self._running = False
-        self._paused = False
+        self._running = True
         self._received_count = 0
         self._packet_times: deque[float] = deque()
         self._last_packet_time: Optional[float] = None
@@ -216,52 +215,17 @@ class CanChannelMonitor(QWidget):
         self._create_widgets()
         self._layout_widgets()
         self._setup_timers()
+        self._start()
 
     def _create_widgets(self) -> None:
         font = QFont("Segoe UI", 9)
 
         compact_font = QFont("Segoe UI", 9)
 
-        self._start_button = QPushButton(tr("Старт"))
-        self._start_button.setFixedSize(80, 28)
-        self._start_button.setFont(compact_font)
-        self._start_button.clicked.connect(self._start)
-
-        self._stop_button = QPushButton(tr("Стоп"))
-        self._stop_button.setFixedSize(80, 28)
-        self._stop_button.setFont(compact_font)
-        self._stop_button.clicked.connect(self._stop)
-
-        self._clear_button = QPushButton(tr("Очистить"))
-        self._clear_button.setFixedSize(80, 28)
-        self._clear_button.setFont(compact_font)
-        self._clear_button.clicked.connect(self._clear)
-
         self._filter_button = QPushButton(tr("Фильтр"))
         self._filter_button.setFixedSize(80, 28)
         self._filter_button.setFont(compact_font)
-        self._filter_button.clicked.connect(self._show_filter_stub)
-
-        self._filter_from = QLineEdit()
-        self._filter_from.setFixedWidth(70)
-        self._filter_from.setMaxLength(8)
-        self._filter_from.setFont(font)
-        self._filter_from.setPlaceholderText(tr("ID от"))
-
-        self._filter_to = QLineEdit()
-        self._filter_to.setFixedWidth(70)
-        self._filter_to.setMaxLength(8)
-        self._filter_to.setFont(font)
-        self._filter_to.setPlaceholderText(tr("ID до"))
-
-        self._exclude_edit = QLineEdit()
-        self._exclude_edit.setFixedWidth(120)
-        self._exclude_edit.setFont(font)
-        self._exclude_edit.setPlaceholderText(tr("Исключить ID"))
-
-        self._pause_check = QCheckBox(tr("Приостановить"))
-        self._pause_check.setFont(font)
-        self._pause_check.stateChanged.connect(self._on_pause_changed)
+        self._filter_button.clicked.connect(self._show_filter_dialog)
 
         self._search_edit = QLineEdit()
         self._search_edit.setFixedWidth(160)
@@ -269,9 +233,9 @@ class CanChannelMonitor(QWidget):
         self._search_edit.setPlaceholderText(tr("Поиск по ID или данным…"))
         self._search_edit.textChanged.connect(self._apply_search)
 
-        self._filter_from.textChanged.connect(self._apply_filters)
-        self._filter_to.textChanged.connect(self._apply_filters)
-        self._exclude_edit.textChanged.connect(self._apply_filters)
+        self._filter_rules: List[Dict[str, Any]] = []
+        self._filter_enabled = False
+        self._highlight_interval_ms = 500
 
         self._table = QTableWidget()
         self._table.setColumnCount(7)
@@ -297,12 +261,13 @@ class CanChannelMonitor(QWidget):
         self._send_bit_combo.addItems(BIT_RATES)
         self._send_bit_combo.setFixedWidth(90)
 
-        self._send_id_edit = QLineEdit()
+        self._send_id_edit = IdPasteEdit()
         self._send_id_edit.setFixedWidth(90)
         self._send_id_edit.setMaxLength(8)
         self._send_id_edit.setFont(font)
         self._send_id_edit.setPlaceholderText("ID")
         self._send_id_validator = _IdValidator(self._send_id_edit, self._send_bit_combo)
+        self._send_id_edit.set_fill_callback(self._fill_send_from_packet)
 
         self._send_dlc_spin = QSpinBox()
         self._send_dlc_spin.setRange(1, 8)
@@ -312,29 +277,28 @@ class CanChannelMonitor(QWidget):
 
         self._send_data_edits: List[QLineEdit] = []
         for i in range(8):
-            edit = QLineEdit()
+            edit = HexDataEdit(f"D{i}")
             edit.setFixedWidth(38)
             edit.setFont(font)
-            edit.setMaxLength(2)
-            edit.setPlaceholderText(f"D{i}")
-            edit.setValidator(QRegularExpressionValidator(QRegularExpression("[0-9A-Fa-f]{0,2}")))
-            edit.textChanged.connect(lambda text, idx=i: self._on_data_text_changed(idx, text))
             self._send_data_edits.append(edit)
+        for edit in self._send_data_edits:
+            edit.set_siblings(self._send_data_edits)
 
         self._send_period_spin = QSpinBox()
         self._send_period_spin.setRange(0, 9999)
         self._send_period_spin.setValue(1000)
         self._send_period_spin.setSuffix(tr(" мс"))
         self._send_period_spin.setFont(font)
-        self._send_period_spin.setFixedWidth(80)
+        self._send_period_spin.setMinimumWidth(90)
 
         self._send_button = QPushButton(tr("Отправить"))
-        self._send_button.setFixedSize(80, 28)
+        self._send_button.setMinimumWidth(100)
+        self._send_button.setFixedHeight(28)
         self._send_button.setFont(font)
         self._send_button.clicked.connect(self._send_manual)
 
         self._cyclic_button = QPushButton("∞")
-        self._cyclic_button.setFixedSize(36, 36)
+        self._cyclic_button.setFixedSize(44, 36)
         self._cyclic_button.setFont(QFont("Arial", 20, QFont.Weight.Bold))
         self._cyclic_button.setStyleSheet(
             "QPushButton { background-color: #3A3A5A; color: #FFFFFF; border: none; border-radius: 4px; }"
@@ -358,21 +322,12 @@ class CanChannelMonitor(QWidget):
         layout.setSpacing(5)
         layout.setContentsMargins(4, 4, 4, 4)
 
-        control_layout = QGridLayout()
+        control_layout = QHBoxLayout()
         control_layout.setSpacing(4)
-        control_layout.addWidget(self._start_button, 0, 0)
-        control_layout.addWidget(self._stop_button, 0, 1)
-        control_layout.addWidget(self._clear_button, 0, 2)
-        control_layout.addWidget(self._filter_button, 0, 3)
-        control_layout.addWidget(QLabel(tr("ID от")), 0, 4)
-        control_layout.addWidget(self._filter_from, 0, 5)
-        control_layout.addWidget(QLabel(tr("до")), 0, 6)
-        control_layout.addWidget(self._filter_to, 0, 7)
-        control_layout.addWidget(QLabel(tr("Искл.")), 0, 8)
-        control_layout.addWidget(self._exclude_edit, 0, 9)
-        control_layout.addWidget(self._pause_check, 1, 0, 1, 2)
-        control_layout.addWidget(QLabel(tr("Поиск:")), 1, 4)
-        control_layout.addWidget(self._search_edit, 1, 5, 1, 3)
+        control_layout.addWidget(self._filter_button)
+        control_layout.addWidget(QLabel(tr("Поиск:")))
+        control_layout.addWidget(self._search_edit)
+        control_layout.addStretch()
         layout.addLayout(control_layout)
 
         layout.addWidget(self._table, 1)
@@ -412,24 +367,27 @@ class CanChannelMonitor(QWidget):
         self._timer.timeout.connect(self._update_stats)
         self._timer.start(1000)
 
-    def _show_filter_stub(self) -> None:
-        QMessageBox.information(self, tr("Фильтр"), tr("Функция в разработке"))
-
     def _on_send_dlc_changed(self, value: int) -> None:
         for i, edit in enumerate(self._send_data_edits):
-            edit.setEnabled(i < value)
+            if i >= value:
+                edit.setText("")
+                edit.setEnabled(False)
+            else:
+                edit.setEnabled(True)
 
-    def _on_data_text_changed(self, index: int, text: str) -> None:
-        """Приводит HEX к верхнему регистру и переводит фокус на следующее поле при вводе 2 символов."""
-        upper = text.upper()
-        edit = self._send_data_edits[index]
-        if text != upper:
-            edit.blockSignals(True)
-            edit.setText(upper)
-            edit.blockSignals(False)
-            text = upper
-        if len(text) == 2 and index + 1 < len(self._send_data_edits):
-            self._send_data_edits[index + 1].setFocus()
+    def _fill_send_from_packet(self, parsed: Dict[str, Any]) -> None:
+        """Заполняет панель отправки из распарсенного пакета."""
+        can_id = parsed.get("id")
+        if can_id is None:
+            return
+        self._send_bit_combo.setCurrentIndex(1 if can_id > 0x7FF else 0)
+        self._send_id_edit.setText(int_to_hex(can_id, 8 if can_id > 0x7FF else 3))
+        dlc = max(1, min(8, parsed.get("dlc", 8)))
+        self._send_dlc_spin.setValue(dlc)
+        data = parsed.get("data", [])
+        for i, edit in enumerate(self._send_data_edits):
+            edit.setText(f"{data[i]:02X}" if i < len(data) else "")
+        self._on_send_dlc_changed(dlc)
 
     def _on_cyclic_toggled(self, checked: bool) -> None:
         if checked:
@@ -462,51 +420,16 @@ class CanChannelMonitor(QWidget):
         self._last_packet_time = None
         self._stats_label.setText(tr("Принято: 0 | Скорость: 0 пак/с"))
 
-    def _on_pause_changed(self, state: int) -> None:
-        self._paused = state == Qt.CheckState.Checked.value
-
-    def _filter_range(self) -> tuple[Optional[int], Optional[int]]:
-        return (hex_to_int(self._filter_from.text()), hex_to_int(self._filter_to.text()))
-
-    def _exclude_ids(self) -> Set[int]:
-        ids: Set[int] = set()
-        for token in self._exclude_edit.text().replace(",", " ").split():
-            value = hex_to_int(token)
-            if value is not None:
-                ids.add(value)
-        return ids
-
-    def _apply_filters(self) -> None:
-        f_from, f_to = self._filter_range()
-        exclude = self._exclude_ids()
-        for row in range(self._table.rowCount()):
-            hidden = False
-            id_item = self._table.item(row, 0)
-            if id_item is not None:
-                can_id = hex_to_int(id_item.text())
-                if can_id is not None:
-                    if f_from is not None and can_id < f_from:
-                        hidden = True
-                    if f_to is not None and can_id > f_to:
-                        hidden = True
-                    if can_id in exclude:
-                        hidden = True
-            self._table.setRowHidden(row, hidden)
-
     def _apply_search(self, text: str = "") -> None:
         query = text.strip().lower()
-        if not query:
-            for row in range(self._table.rowCount()):
-                self._table.setRowHidden(row, False)
-            self._apply_filters()
-            return
         for row in range(self._table.rowCount()):
-            hidden = True
-            for col in range(self._table.columnCount()):
-                item = self._table.item(row, col)
-                if item is not None and query in item.text().lower():
-                    hidden = False
-                    break
+            hidden = bool(query)
+            if query:
+                for col in range(self._table.columnCount()):
+                    item = self._table.item(row, col)
+                    if item is not None and query in item.text().lower():
+                        hidden = False
+                        break
             self._table.setRowHidden(row, hidden)
 
     def _send_manual(self) -> None:
@@ -580,49 +503,23 @@ class CanChannelMonitor(QWidget):
             signals,
         ]
 
-    def _reset_row_highlight(self, row: int) -> None:
-        for col in range(self._table.columnCount()):
-            item = self._table.item(row, col)
-            if item is not None:
-                item.setBackground(QColor())
-
-    def _highlight_changed_bytes(self, row: int, new_data: bytes, old_data: bytes) -> None:
-        if row in self._highlight_timers:
-            self._highlight_timers[row].stop()
-        color = QColor(HIGHLIGHT_COLOR)
-        data_text = " ".join(format_data_bytes(new_data))
-        old_text = " ".join(format_data_bytes(old_data))
-        data_item = self._table.item(row, 2)
-        if data_item is not None:
-            data_item.setBackground(color)
-        timer = QTimer(self)
-        timer.setSingleShot(True)
-        timer.timeout.connect(lambda r=row: self._reset_row_highlight(r))
-        timer.start(HIGHLIGHT_MS)
-        self._highlight_timers[row] = timer
-
     def add_frame(self, frame: Dict[str, object]) -> None:
-        if not self._running or self._paused:
+        if not self._running:
             return
         frame_id = int(frame["id"])
-        f_from, f_to = self._filter_range()
-        exclude = self._exclude_ids()
-        if f_from is not None and frame_id < f_from:
-            return
-        if f_to is not None and frame_id > f_to:
-            return
-        if frame_id in exclude:
+        data = bytes(frame["data"])
+        if self._filter_enabled and self._matches_filter(frame_id, data):
             return
 
         self._received_count += 1
         self._packet_times.append(time.time())
         self._last_packet_time = time.time()
 
-        data = bytes(frame["data"])
         now = time.time()
-        stats = self._id_stats.setdefault(frame_id, {"count": 0, "last_time": None, "last_data": b""})
+        stats = self._id_stats.setdefault(frame_id, {"count": 0, "last_time": None, "last_data": b"", "last_receive_time": None})
         stats["count"] += 1
         period = self._format_period(frame_id, now)
+        prev_receive_time = stats.get("last_receive_time")
         stats["last_time"] = now
 
         timestamp = time.strftime("%H:%M:%S") + f".{int((now % 1) * 1000):03d}"
@@ -645,18 +542,24 @@ class CanChannelMonitor(QWidget):
                     item.setText(text)
                 if tooltip:
                     item.setToolTip(tooltip)
-            self._highlight_changed_bytes(row, data, old_data)
+            if old_data != data and prev_receive_time is not None:
+                elapsed_ms = int((now - prev_receive_time) * 1000)
+                if elapsed_ms > self._highlight_interval_ms:
+                    self._highlight_data_cell(row)
         else:
             if self._table.rowCount() >= MAX_TABLE_ROWS:
-                self._table.removeRow(0)
-                self._id_to_row = {}
-                for r in range(self._table.rowCount()):
-                    id_item = self._table.item(r, 0)
-                    if id_item is not None:
-                        fid = hex_to_int(id_item.text())
-                        if fid is not None:
-                            self._id_to_row[fid] = r
-            row = self._table.rowCount()
+                last_row = self._table.rowCount() - 1
+                id_item = self._table.item(last_row, 0)
+                if id_item is not None:
+                    fid = hex_to_int(id_item.text())
+                    if fid is not None:
+                        self._id_to_row.pop(fid, None)
+                        self._id_stats.pop(fid, None)
+                self._table.removeRow(last_row)
+                for fid, r in list(self._id_to_row.items()):
+                    if r >= last_row:
+                        self._id_to_row[fid] = r - 1
+            row = self._find_insert_row(frame_id)
             self._table.insertRow(row)
             for col, text in enumerate(items):
                 item = QTableWidgetItem(text)
@@ -664,12 +567,75 @@ class CanChannelMonitor(QWidget):
                 if tooltip:
                     item.setToolTip(tooltip)
                 self._table.setItem(row, col, item)
+            for fid, r in list(self._id_to_row.items()):
+                if r >= row:
+                    self._id_to_row[fid] = r + 1
             self._id_to_row[frame_id] = row
 
+        stats["last_receive_time"] = now
         stats["last_data"] = data
         self._id_data_variants.setdefault(frame_id, set()).add(data)
 
         self._table.scrollToBottom()
+
+    def _matches_filter(self, frame_id: int, data: bytes) -> bool:
+        for rule in self._filter_rules:
+            if rule.get("id") is not None and rule["id"] != frame_id:
+                continue
+            from_bytes = rule.get("from", b"")
+            to_bytes = rule.get("to", b"")
+            length = min(len(data), len(from_bytes), len(to_bytes))
+            if length == 0 and (len(from_bytes) > 0 or len(to_bytes) > 0):
+                continue
+            match = True
+            for i in range(length):
+                if not (from_bytes[i] <= data[i] <= to_bytes[i]):
+                    match = False
+                    break
+            if match:
+                return True
+        return False
+
+    def _find_insert_row(self, frame_id: int) -> int:
+        for row in range(self._table.rowCount()):
+            id_item = self._table.item(row, 0)
+            if id_item is None:
+                continue
+            existing = hex_to_int(id_item.text())
+            if existing is not None and existing < frame_id:
+                return row
+        return self._table.rowCount()
+
+    def _highlight_data_cell(self, row: int) -> None:
+        if row in self._highlight_timers:
+            self._highlight_timers[row].stop()
+            del self._highlight_timers[row]
+        data_item = self._table.item(row, 2)
+        if data_item is None:
+            return
+        data_item.setBackground(QColor("#FF4444"))
+        timer = QTimer(self)
+        timer.setSingleShot(True)
+        timer.timeout.connect(lambda r=row: self._reset_data_background(r))
+        timer.start(500)
+        self._highlight_timers[row] = timer
+
+    def _reset_data_background(self, row: int) -> None:
+        data_item = self._table.item(row, 2)
+        if data_item is not None:
+            data_item.setBackground(QColor())
+        self._highlight_timers.pop(row, None)
+
+    def _show_filter_dialog(self) -> None:
+        dialog = FilterDialog(self._filter_rules, self._filter_enabled, self._highlight_interval_ms, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        result = dialog.get_result()
+        if result is None:
+            return
+        self._filter_enabled = result["enabled"]
+        self._highlight_interval_ms = result["interval_ms"]
+        self._filter_rules = result["rules"]
 
     def _show_context_menu(self, position) -> None:
         row = self._table.currentRow()
@@ -735,18 +701,11 @@ class CanChannelMonitor(QWidget):
 
     def set_dbc(self, dbc) -> None:
         """Уведомляет канал о смене DBC."""
-        self._apply_filters()
+        self._apply_search(self._search_edit.text())
 
     def retranslate_ui(self) -> None:
         """Обновляет статические строки панели мониторинга канала."""
-        self._start_button.setText(tr("Старт"))
-        self._stop_button.setText(tr("Стоп"))
-        self._clear_button.setText(tr("Очистить"))
         self._filter_button.setText(tr("Фильтр"))
-        self._filter_from.setPlaceholderText(tr("ID от"))
-        self._filter_to.setPlaceholderText(tr("ID до"))
-        self._exclude_edit.setPlaceholderText(tr("Исключить ID"))
-        self._pause_check.setText(tr("Приостановить"))
         self._search_edit.setPlaceholderText(tr("Поиск по ID или данным…"))
         self._table.setHorizontalHeaderLabels(
             [tr("ID"), tr("DLC"), tr("DATA"), tr("Период"), tr("Счётчик"), tr("ASCII"), tr("Пояснение")]

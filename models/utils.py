@@ -4,7 +4,7 @@ import re
 import shutil
 import sys
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from platformdirs import user_data_dir
 
@@ -100,6 +100,28 @@ def bytes_to_hex_string(data: bytes) -> str:
         Строка, например «DE AD BE EF».
     """
     return " ".join(f"{b:02X}" for b in data)
+
+
+def parse_packet_string(text: str) -> Optional[Dict[str, Any]]:
+    """Парсит строку вида ID=<hex> DLC=<n> DATA=<hex hex ...>.
+
+    Args:
+        text: Строка из буфера обмена.
+
+    Returns:
+        Словарь {"id": int, "dlc": int, "data": List[int]} или None.
+    """
+    match = re.match(
+        r"ID\s*=\s*([0-9A-Fa-f]+)\s+DLC\s*=\s*(\d+)\s+DATA\s*=\s*([0-9A-Fa-f ]+)",
+        text.strip(),
+    )
+    if not match:
+        return None
+    can_id = hex_to_int(match.group(1))
+    dlc = int(match.group(2))
+    data_values = match.group(3).strip().split()
+    data = [v for v in (hex_to_int(t) for t in data_values) if v is not None]
+    return {"id": can_id, "dlc": dlc, "data": data}
 
 
 def get_library_root() -> Path:
