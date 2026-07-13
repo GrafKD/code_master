@@ -318,7 +318,7 @@ class CanChannelMonitor(QWidget):
             edit.setMaxLength(2)
             edit.setPlaceholderText(f"D{i}")
             edit.setValidator(QRegularExpressionValidator(QRegularExpression("[0-9A-Fa-f]{0,2}")))
-            edit.textChanged.connect(lambda text, e=edit: self._on_data_edit_changed(e, text))
+            edit.textChanged.connect(lambda text, idx=i: self._on_data_text_changed(idx, text))
             self._send_data_edits.append(edit)
 
         self._send_period_spin = QSpinBox()
@@ -334,10 +334,11 @@ class CanChannelMonitor(QWidget):
         self._send_button.clicked.connect(self._send_manual)
 
         self._cyclic_button = QPushButton("∞")
-        self._cyclic_button.setFixedSize(40, 40)
-        self._cyclic_button.setFont(QFont("Segoe UI", 24))
+        self._cyclic_button.setFixedSize(36, 36)
+        self._cyclic_button.setFont(QFont("Arial", 20, QFont.Weight.Bold))
         self._cyclic_button.setStyleSheet(
             "QPushButton { background-color: #3A3A5A; color: #FFFFFF; border: none; border-radius: 4px; }"
+            "QPushButton:hover { background-color: #4A4A6A; }"
         )
         self._cyclic_button.setToolTip(tr("Циклически"))
         self._cyclic_button.setCheckable(True)
@@ -418,13 +419,17 @@ class CanChannelMonitor(QWidget):
         for i, edit in enumerate(self._send_data_edits):
             edit.setEnabled(i < value)
 
-    def _on_data_edit_changed(self, edit: QLineEdit, text: str) -> None:
-        """Автоматически приводит введённые HEX-символы к верхнему регистру."""
+    def _on_data_text_changed(self, index: int, text: str) -> None:
+        """Приводит HEX к верхнему регистру и переводит фокус на следующее поле при вводе 2 символов."""
         upper = text.upper()
+        edit = self._send_data_edits[index]
         if text != upper:
             edit.blockSignals(True)
             edit.setText(upper)
             edit.blockSignals(False)
+            text = upper
+        if len(text) == 2 and index + 1 < len(self._send_data_edits):
+            self._send_data_edits[index + 1].setFocus()
 
     def _on_cyclic_toggled(self, checked: bool) -> None:
         if checked:

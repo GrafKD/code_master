@@ -125,9 +125,21 @@ class CanTriggerTab(QWidget):
             edit.setMaxLength(2)
             edit.setPlaceholderText(f"D{d}")
             edit.setValidator(QRegularExpressionValidator(QRegularExpression("[0-9A-Fa-f]{0,2}")))
-            edit.textChanged.connect(lambda text, e=edit: self._on_data_edit_changed(e, text))
+            edit.textChanged.connect(lambda text, idx=d, lst=edits: self._on_data_text_changed(lst, idx, text))
             edits.append(edit)
         return edits
+
+    def _on_data_text_changed(self, edits: List[QLineEdit], index: int, text: str) -> None:
+        """Приводит HEX к верхнему регистру и переводит фокус на следующее поле при вводе 2 символов."""
+        upper = text.upper()
+        edit = edits[index]
+        if text != upper:
+            edit.blockSignals(True)
+            edit.setText(upper)
+            edit.blockSignals(False)
+            text = upper
+        if len(text) == 2 and index + 1 < len(edits):
+            edits[index + 1].setFocus()
 
     def _make_channel_combo(self, font: QFont) -> QComboBox:
         combo = QComboBox()
@@ -208,12 +220,16 @@ class CanTriggerTab(QWidget):
         group_layout.setContentsMargins(6, 6, 6, 6)
 
         header = QHBoxLayout()
-        header.addWidget(QLabel(tr("Фреймы ответа")))
+        header_label = QLabel(tr("Фреймы ответа"))
+        header.addWidget(header_label)
         header.addStretch()
         add_button = QPushButton("+")
-        add_button.setFixedSize(30, 30)
+        add_button.setFixedSize(26, 26)
         add_button.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
-        add_button.setStyleSheet("QPushButton { background-color: #3A3A5A; color: #FFFFFF; border: none; border-radius: 4px; }")
+        add_button.setStyleSheet(
+            "QPushButton { background-color: #3A3A5A; color: #FFFFFF; border: none; border-radius: 4px; }"
+            "QPushButton:hover { background-color: #4A4A6A; }"
+        )
         add_button.setToolTip(tr("Добавить фрейм"))
         header.addWidget(add_button)
         group_layout.addLayout(header)
@@ -222,7 +238,7 @@ class CanTriggerTab(QWidget):
         rows_layout.setSpacing(4)
         group_layout.addLayout(rows_layout)
 
-        block = {"group": group, "rows_layout": rows_layout, "add_button": add_button, "rows": []}
+        block = {"group": group, "header_label": header_label, "rows_layout": rows_layout, "add_button": add_button, "rows": []}
         add_button.clicked.connect(lambda: self._add_response_row(block, font))
         self._add_response_row(block, font)
         return block
@@ -246,9 +262,12 @@ class CanTriggerTab(QWidget):
         count.setFixedWidth(60)
 
         remove_button = QPushButton("\u2013")
-        remove_button.setFixedSize(30, 30)
+        remove_button.setFixedSize(26, 26)
         remove_button.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
-        remove_button.setStyleSheet("QPushButton { background-color: #3A3A5A; color: #FFFFFF; border: none; border-radius: 4px; }")
+        remove_button.setStyleSheet(
+            "QPushButton { background-color: #3A3A5A; color: #FFFFFF; border: none; border-radius: 4px; }"
+            "QPushButton:hover { background-color: #4A4A6A; }"
+        )
         remove_button.setToolTip(tr("Удалить фрейм"))
 
         row_layout.addWidget(QLabel(tr("Канал")))
@@ -356,12 +375,22 @@ class CanTriggerTab(QWidget):
         for row in block["rows"]:
             row["remove_button"].setEnabled(len(block["rows"]) > 1)
 
-    def _create_cache_block(self, font: QFont) -> Dict[str, Any]:
+    def _create_cache_block(self, font: QFont, index: int) -> Dict[str, Any]:
         group = QGroupBox(tr("Кэш"))
         group.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
         group_layout = QVBoxLayout(group)
         group_layout.setSpacing(4)
         group_layout.setContentsMargins(6, 6, 6, 6)
+
+        cache_check = QCheckBox(tr("Автоматическая запись DATA в Кэш"))
+        cache_check.setFont(font)
+        cache_check.stateChanged.connect(lambda state, idx=index: self._on_cache_active_changed(idx, state))
+        group_layout.addWidget(cache_check)
+
+        fields_widget = QWidget()
+        fields_layout = QVBoxLayout(fields_widget)
+        fields_layout.setSpacing(4)
+        fields_layout.setContentsMargins(0, 0, 0, 0)
 
         row1 = QHBoxLayout()
         row1.setSpacing(4)
@@ -405,11 +434,14 @@ class CanTriggerTab(QWidget):
         self._set_data_enabled(from_data, dlc.value())
         self._set_data_enabled(to_data, dlc.value())
 
-        group_layout.addLayout(row1)
-        group_layout.addLayout(row2)
+        fields_layout.addLayout(row1)
+        fields_layout.addLayout(row2)
+        group_layout.addWidget(fields_widget)
 
         return {
             "group": group,
+            "cache_check": cache_check,
+            "fields_widget": fields_widget,
             "channel": channel,
             "bit": bit,
             "id": can_id,
@@ -423,14 +455,6 @@ class CanTriggerTab(QWidget):
     def _set_data_enabled(self, edits: List[QLineEdit], count: int) -> None:
         for i, edit in enumerate(edits):
             edit.setEnabled(i < count)
-
-    def _on_data_edit_changed(self, edit: QLineEdit, text: str) -> None:
-        """Приводит введённые HEX-символы в полях Data к верхнему регистру."""
-        upper = text.upper()
-        if text != upper:
-            edit.blockSignals(True)
-            edit.setText(upper)
-            edit.blockSignals(False)
 
     def _create_widgets(self) -> None:
         font = QFont("Segoe UI", 9)
@@ -454,21 +478,12 @@ class CanTriggerTab(QWidget):
             group.setCheckable(True)
             group.setChecked(True)
 
-            active = QCheckBox(tr("Активен"))
-            active.setFont(font)
-
-            cache_check = QCheckBox(tr("Автоматическая запись DATA в Кэш"))
-            cache_check.setFont(font)
-            cache_check.stateChanged.connect(lambda state, idx=i: self._on_cache_active_changed(idx, state))
-
             recv = self._create_receive_row(font, tr("Приём"))
             response = self._create_response_block(font)
-            cache = self._create_cache_block(font)
+            cache = self._create_cache_block(font, i)
 
             block = {
                 "group": group,
-                "active": active,
-                "cache_check": cache_check,
                 "recv": recv,
                 "response": response,
                 "cache": cache,
@@ -501,18 +516,13 @@ class CanTriggerTab(QWidget):
             content_layout.setSpacing(5)
             content_layout.setContentsMargins(6, 6, 6, 6)
 
-            top = QHBoxLayout()
-            top.addWidget(block["active"])
-            top.addWidget(block["cache_check"])
-            top.addStretch()
-            content_layout.addLayout(top)
-
             content_layout.addLayout(block["recv"]["layout"])
 
             content_layout.addWidget(block["response"]["group"])
 
             content_layout.addWidget(block["cache"]["group"])
             self._set_cache_enabled(block, False)
+            block["cache"]["cache_check"].setEnabled(True)
 
             group_layout.addWidget(content)
             block["group"].toggled.connect(lambda checked, content=content: content.setVisible(checked))
@@ -536,7 +546,7 @@ class CanTriggerTab(QWidget):
 
     def _set_cache_enabled(self, block: Dict[str, Any], enabled: bool) -> None:
         block["response"]["group"].setEnabled(not enabled)
-        block["cache"]["group"].setEnabled(enabled)
+        block["cache"]["fields_widget"].setEnabled(enabled)
 
     def retranslate_ui(self) -> None:
         """Обновляет статические строки вкладки триггеров."""
@@ -545,9 +555,12 @@ class CanTriggerTab(QWidget):
         self._load_button.setText(tr("Загрузить триггеры"))
         for i, block in enumerate(self._blocks):
             block["group"].setTitle(tr("Триггер {0}").format(i + 1))
-            block["active"].setText(tr("Активен"))
-            block["cache_check"].setText(tr("Автоматическая запись DATA в Кэш"))
+            block["cache"]["cache_check"].setText(tr("Автоматическая запись DATA в Кэш"))
             block["response"]["group"].setTitle(tr("Ответ"))
+            block["response"]["header_label"].setText(tr("Фреймы ответа"))
+            block["response"]["add_button"].setToolTip(tr("Добавить фрейм"))
+            for row in block["response"]["rows"]:
+                row["remove_button"].setToolTip(tr("Удалить фрейм"))
             block["cache"]["group"].setTitle(tr("Кэш"))
 
     def _parse_id(self, text: str) -> Optional[int]:
@@ -567,7 +580,7 @@ class CanTriggerTab(QWidget):
     def _build_internal_triggers(self) -> List[Dict[str, Any]]:
         triggers = []
         for i, block in enumerate(self._blocks):
-            if not block["active"].isChecked():
+            if not block["group"].isChecked():
                 continue
             recv_id = self._parse_id(block["recv"]["id"].text())
             if recv_id is None:
@@ -577,7 +590,7 @@ class CanTriggerTab(QWidget):
                 "recv_id": recv_id,
                 "recv_data": self._parse_data(block["recv"]["data"]),
                 "recv_channel": block["recv"]["channel"].currentIndex(),
-                "cache": block["cache_check"].isChecked(),
+                "cache": block["cache"]["cache_check"].isChecked(),
                 "responses": self._collect_responses(block["response"]["rows"]),
                 "cache_data": self._collect_cache(block["cache"]),
                 "cached_frame": None,
@@ -642,8 +655,8 @@ class CanTriggerTab(QWidget):
                 })
             cache = block["cache"]
             config.append({
-                "active": block["active"].isChecked(),
-                "cache": block["cache_check"].isChecked(),
+                "active": block["group"].isChecked(),
+                "cache": block["cache"]["cache_check"].isChecked(),
                 "recv_channel": block["recv"]["channel"].currentIndex(),
                 "recv_bit": block["recv"]["bit"].currentIndex(),
                 "recv_id": block["recv"]["id"].text(),
@@ -665,9 +678,9 @@ class CanTriggerTab(QWidget):
         """Загружает конфигурацию триггеров из списка."""
         for i, block in enumerate(self._blocks):
             trigger = triggers[i] if i < len(triggers) else {}
-            block["active"].setChecked(bool(trigger.get("active", False)))
+            block["group"].setChecked(bool(trigger.get("active", True)))
             cache_active = bool(trigger.get("cache", False))
-            block["cache_check"].setChecked(cache_active)
+            block["cache"]["cache_check"].setChecked(cache_active)
             self._on_cache_active_changed(i, Qt.CheckState.Checked.value if cache_active else Qt.CheckState.Unchecked.value)
 
             self._set_row(block["recv"], trigger, "recv")
@@ -891,7 +904,7 @@ class CanTriggerTab(QWidget):
         if not self._blocks:
             return
         block = self._blocks[0]
-        block["active"].setChecked(True)
+        block["group"].setChecked(True)
         can_id = int(packet["id"])
         block["recv"]["id"].setText(int_to_hex(can_id, 8 if can_id > 0x7FF else 3))
         block["recv"]["bit"].setCurrentIndex(1 if can_id > 0x7FF else 0)

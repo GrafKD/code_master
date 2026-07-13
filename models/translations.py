@@ -81,7 +81,7 @@ class Translator:
                 "Выходной ID": "Output ID",
                 "Прошивка завершена успешно": "Firmware update completed",
                 "Ошибка прошивки": "Firmware error",
-                "Прошить микроконтроллер": "Flash microcontroller",
+                "Прошить\nмикроконтроллер": "Flash\nmicrocontroller",
                 "Загрузить .bin или .hex через UART bootloader": "Upload .bin or .hex via UART bootloader",
                 "Выберите файл прошивки": "Select firmware file",
                 "Подготовка...": "Preparing...",

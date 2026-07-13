@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import Dict, Optional
 
-from PySide6.QtCore import QThread, Signal, Qt
+from PySide6.QtCore import QThread, Signal, Qt, QSize
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QFileDialog,
@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QStyle,
     QVBoxLayout,
     QWidget,
 )
@@ -112,13 +113,15 @@ class FirmwarePage(QWidget):
         self._populate_car_list()
 
     def _make_browse_button(self, callback) -> QPushButton:
-        """Создаёт чёткую кнопку выбора файла с крупным символом папки."""
-        button = QPushButton("📂")
-        button.setFixedSize(40, 40)
-        button.setFont(QFont("Segoe UI", 24))
+        """Создаёт чёткую кнопку выбора файла со стандартной иконкой папки."""
+        button = QPushButton()
+        button.setFixedSize(36, 36)
+        button.setIcon(self.style().standardIcon(QStyle.SP_DirOpenIcon))
+        button.setIconSize(QSize(24, 24))
         button.setToolTip(tr("Выбрать файл с компьютера"))
         button.setStyleSheet(
-            "QPushButton { background-color: #3A3A5A; color: #FFFFFF; border: none; border-radius: 4px; }"
+            "QPushButton { background-color: #3A3A5A; border: none; border-radius: 4px; }"
+            "QPushButton:hover { background-color: #4A4A6A; }"
         )
         button.clicked.connect(callback)
         return button
