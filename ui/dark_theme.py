@@ -186,19 +186,19 @@ QCheckBox::indicator {
     width: 18px;
     height: 18px;
     border-radius: 4px;
-    border: 1px solid #6C8CFF;
-    background-color: #2B2B3C;
-    color: #FFFFFF;
+    border: 1px solid $border;
+    background-color: $bg_widget;
+    color: $text;
 }
 QCheckBox::indicator:checked {
-    background-color: #6C8CFF;
-    border-color: #6C8CFF;
-    image: url($check_icon);
-    color: #FFFFFF;
+    background-color: $accent;
+    border-color: $accent;
+    image: url("$check_icon");
+    color: $text_selected;
 }
 QCheckBox::indicator:hover {
-    background-color: #3A3A5A;
-    border-color: #6C8CFF;
+    background-color: $bg_button_hover;
+    border-color: $accent;
 }
 QRadioButton {
     color: $text;
@@ -370,7 +370,7 @@ def apply_light_theme(app: QApplication) -> None:
     """Применяет светлую тему."""
     _apply_theme(app, {
         "bg_window": "#F5F5FA",
-        "bg_panel": "#E8E8F0",
+        "bg_panel": "#F0F0F0",
         "bg_widget": "#FFFFFF",
         "bg_alternate": "#F0F0F5",
         "bg_button": "#E0E0EC",
@@ -383,9 +383,9 @@ def apply_light_theme(app: QApplication) -> None:
         "bg_selected": "#D0D8FF",
         "accent": "#4A6CFF",
         "border": "#C0C0D0",
-        "text": "#2B2B3C",
+        "text": "#000000",
         "text_secondary": "#6A6A7A",
         "text_selected": "#FFFFFF",
-        "text_title": "#1E1E2E",
+        "text_title": "#000000",
         "text_disabled": "#8A8A9A",
     })

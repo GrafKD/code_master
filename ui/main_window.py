@@ -77,8 +77,8 @@ class MainWindow(QMainWindow):
 
         # Верхняя панель
         self._top_panel = QWidget()
+        self._top_panel.setObjectName("topPanel")
         self._top_panel.setFixedHeight(48)
-        self._top_panel.setStyleSheet("background-color: #252538; border: none;")
 
         self._logo_label = QLabel("🛠️ " + tr("Код Мастер"))
         self._logo_label.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
@@ -288,6 +288,7 @@ class MainWindow(QMainWindow):
             return
         if self._settings_window is None:
             self._settings_window = SettingsWindow(self._serial_manager, self)
+            self._settings_window.setWindowModality(Qt.WindowModality.ApplicationModal)
         self._settings_window.show()
         self._settings_window.raise_()
         self._settings_window.activateWindow()

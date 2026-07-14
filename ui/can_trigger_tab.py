@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFrame,
+    QGraphicsOpacityEffect,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
@@ -548,6 +549,16 @@ class CanTriggerTab(QWidget):
         block = self._blocks[index]
         self._set_cache_enabled(block, enabled)
 
+    def _set_widget_opacity(self, widget: QWidget, opacity: float) -> None:
+        """Устанавливает прозрачность виджета."""
+        effect = widget.graphicsEffect()
+        if isinstance(effect, QGraphicsOpacityEffect):
+            effect.setOpacity(opacity)
+        else:
+            effect = QGraphicsOpacityEffect(widget)
+            effect.setOpacity(opacity)
+            widget.setGraphicsEffect(effect)
+
     def _set_cache_enabled(self, block: Dict[str, Any], enabled: bool) -> None:
         """Включает либо блок ответа, либо блок кэша в зависимости от чекбокса."""
         response_group = block["response"]["group"]
@@ -556,12 +567,8 @@ class CanTriggerTab(QWidget):
         response_group.setEnabled(not enabled)
         cache_fields.setEnabled(enabled)
 
-        if enabled:
-            response_group.setStyleSheet("QGroupBox { color: #555555; } QWidget { opacity: 0.5; }")
-            cache_fields.setStyleSheet("")
-        else:
-            response_group.setStyleSheet("")
-            cache_fields.setStyleSheet("QWidget { color: #555555; } QLineEdit, QComboBox, QSpinBox { background-color: #2B2B2B; color: #555555; }")
+        self._set_widget_opacity(response_group, 0.5 if enabled else 1.0)
+        self._set_widget_opacity(cache_fields, 1.0 if enabled else 0.5)
 
     def retranslate_ui(self) -> None:
         """Обновляет статические строки вкладки триггеров."""

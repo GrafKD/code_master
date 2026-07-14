@@ -25,12 +25,10 @@ from ui.ui_utils import setup_button
 from ui.analog_ports_tab import AnalogPortsTab
 from ui.can_analyzer import CanAnalyzer
 from ui.can_gateway_tab import CanGatewayTab
-from ui.signal_graph_tab import SignalGraphTab
 from ui.can_monitor_tab import CanMonitorTab
 from ui.can_trigger_tab import CanTriggerTab
 from ui.flexible_logic_tab import FlexibleLogicTab
 from ui.library_browser import LibraryBrowser
-from ui.logic_tab import LogicTab
 
 logger = get_logger(__name__)
 
@@ -59,19 +57,15 @@ class SettingsWindow(QMainWindow):
         self._monitor_tab = CanMonitorTab(self._serial_manager, self)
         self._gateway_tab = CanGatewayTab(self._serial_manager, self)
         self._flexible_tab = FlexibleLogicTab(self._serial_manager, self)
-        self._logic_tab = LogicTab(self._serial_manager, self)
         self._library_tab = LibraryBrowser(self._trigger_tab, self._flexible_tab, self)
-        self._graph_tab = SignalGraphTab(self._serial_manager, self)
         self._analyzer_tab = CanAnalyzer(self._serial_manager, self)
         self._analog_tab: Optional[AnalogPortsTab] = None
 
         self._tabs.addTab(self._trigger_tab, "⚡ " + tr("Триггеры"))
         self._tabs.addTab(self._monitor_tab, "🔍 " + tr("Мониторинг"))
         self._tabs.addTab(self._gateway_tab, "🚦 " + tr("Шлюз"))
-        self._tabs.addTab(self._logic_tab, "🧩 " + tr("Логика"))
         self._tabs.addTab(self._flexible_tab, "🧩 " + tr("Гибкая логика"))
         self._tabs.addTab(self._library_tab, "📚 " + tr("Библиотека"))
-        self._tabs.addTab(self._graph_tab, "📈 " + tr("Графики"))
         self._tabs.addTab(self._analyzer_tab, "🔬 " + tr("Трэйс"))
         self._update_analog_tab()
         self._serial_manager.device_identified.connect(self._update_analog_tab)
@@ -148,10 +142,8 @@ class SettingsWindow(QMainWindow):
             self._trigger_tab: "⚡ " + tr("Триггеры"),
             self._monitor_tab: "🔍 " + tr("Мониторинг"),
             self._gateway_tab: "🚦 " + tr("Шлюз"),
-            self._logic_tab: "🧩 " + tr("Логика"),
             self._flexible_tab: "🧩 " + tr("Гибкая логика"),
             self._library_tab: "📚 " + tr("Библиотека"),
-            self._graph_tab: "📈 " + tr("Графики"),
             self._analyzer_tab: "🔬 " + tr("Трэйс"),
         }
         if self._analog_tab is not None:
@@ -169,10 +161,8 @@ class SettingsWindow(QMainWindow):
             self._trigger_tab,
             self._monitor_tab,
             self._gateway_tab,
-            self._logic_tab,
             self._flexible_tab,
             self._library_tab,
-            self._graph_tab,
             self._analyzer_tab,
         ):
             if hasattr(tab, "retranslate_ui"):
@@ -183,7 +173,6 @@ class SettingsWindow(QMainWindow):
         self._serial_manager.new_can_frame.connect(self._gateway_tab.process_frame)
         self._serial_manager.new_can_frame.connect(self._monitor_tab.process_frame)
         self._serial_manager.new_can_frame.connect(self._flexible_tab.process_frame)
-        self._serial_manager.new_can_frame.connect(self._graph_tab.process_frame)
         self._serial_manager.new_can_frame.connect(self._analyzer_tab.process_frame)
         self._serial_manager.error_occurred.connect(self._on_serial_error)
         self._monitor_tab.create_trigger_requested.connect(self._on_create_trigger)
@@ -198,10 +187,8 @@ class SettingsWindow(QMainWindow):
             self._trigger_tab: ["trigger", "триггеры", "триггер", "кэш", "cache", "ответ", "response", "frame", "фрейм", "data", "данные"],
             self._monitor_tab: ["monitor", "monitoring", "мониторинг", "фильтр", "filter", "канал", "channel", "can1", "can2", "поиск", "search", "send", "отправить"],
             self._gateway_tab: ["gateway", "шлюз", "rule", "правило", "ignore", "игнорировать", "replace", "подмена"],
-            self._logic_tab: ["logic", "логика", "events", "события", "conditions", "условия", "actions", "действия", "chain", "цепочка"],
             self._flexible_tab: ["flexible logic", "гибкая логика", "logic", "логика", "rules", "правила"],
             self._library_tab: ["library", "библиотека", "dbc", "id", "make", "марка", "model", "модель", "database", "база"],
-            self._graph_tab: ["graph", "график", "signal", "сигнал", "chart", "plot"],
             self._analyzer_tab: ["trace", "трейс", "analyzer", "анализатор", "log", "лог"],
         }
         if self._analog_tab is not None:
@@ -321,7 +308,6 @@ class SettingsWindow(QMainWindow):
             self._gateway_tab,
             self._monitor_tab,
             self._flexible_tab,
-            self._graph_tab,
             self._analyzer_tab,
         ):
             if hasattr(tab, "set_dbc"):

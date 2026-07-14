@@ -3,9 +3,10 @@
 from pathlib import Path
 from typing import Dict, Optional
 
-from PySide6.QtCore import QThread, Signal, Qt, QSize
+from PySide6.QtCore import QThread, Signal, Qt, QSize, QTimer
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
+    QComboBox,
     QFileDialog,
     QGroupBox,
     QHBoxLayout,
@@ -22,11 +23,18 @@ from PySide6.QtWidgets import (
 )
 
 from core.bootloader import Bootloader, BootloaderError
+from core.can_protocol import DEVICE_TYPE_ANALOG, DEVICE_TYPE_BASIC
 from core.serial_manager import SerialManager
 from models.config import Config
 from models.logger import get_logger
 from models.translations import _ as tr
 from ui.ui_utils import setup_button
+
+try:
+    from serial.tools.list_ports import comports
+except Exception:  # noqa: BLE001
+    def comports() -> list:
+        return []
 
 logger = get_logger(__name__)
 
@@ -109,6 +117,10 @@ class FirmwarePage(QWidget):
         self._config = Config()
         self._create_widgets()
         self._build_layout()
+        self._connect_signals()
+        self._refresh_ports()
+        self._update_connection_status()
+        self._update_device_info()
         self._populate_fw_list()
         self._populate_car_list()
 
@@ -132,6 +144,34 @@ class FirmwarePage(QWidget):
         self._title = QLabel(tr("Прошивка STM32"))
         self._title.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
         self._title.setProperty("title", True)
+
+        # Панель подключения
+        self._interface_label = QLabel(tr("Интерфейс"))
+        self._interface_label.setFont(font)
+        self._interface_combo = QComboBox()
+        self._interface_combo.setFont(font)
+        self._interface_combo.setEditable(True)
+        self._interface_combo.setMinimumWidth(180)
+
+        self._connect_button = QPushButton(tr("Подключиться"))
+        self._connect_button.setFont(font)
+        self._connect_button.setFixedHeight(30)
+        self._connect_button.clicked.connect(self._on_connect_clicked)
+
+        self._refresh_ports_button = QPushButton(tr("🔄"))
+        self._refresh_ports_button.setFont(font)
+        self._refresh_ports_button.setFixedSize(30, 30)
+        self._refresh_ports_button.setToolTip(tr("Обновить список портов"))
+        self._refresh_ports_button.clicked.connect(self._refresh_ports)
+
+        self._connection_status = QLabel(tr("Не подключено"))
+        self._connection_status.setFont(font)
+        self._connection_status.setStyleSheet("color: #F44336;")
+
+        self._device_type_label = QLabel(tr("Тип устройства: -"))
+        self._device_type_label.setFont(font)
+        self._serial_number_label = QLabel(tr("Серийный номер: -"))
+        self._serial_number_label.setFont(font)
 
         # Столбец 1: ПО блока
         self._fw_group = QGroupBox(tr("ПО блока"))
@@ -186,6 +226,18 @@ class FirmwarePage(QWidget):
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(10)
         layout.addWidget(self._title)
+
+        connection_layout = QHBoxLayout()
+        connection_layout.setSpacing(8)
+        connection_layout.addWidget(self._interface_label)
+        connection_layout.addWidget(self._interface_combo)
+        connection_layout.addWidget(self._refresh_ports_button)
+        connection_layout.addWidget(self._connect_button)
+        connection_layout.addWidget(self._connection_status)
+        connection_layout.addStretch()
+        connection_layout.addWidget(self._device_type_label)
+        connection_layout.addWidget(self._serial_number_label)
+        layout.addLayout(connection_layout)
 
         columns = QHBoxLayout()
         columns.setSpacing(12)
@@ -374,6 +426,84 @@ class FirmwarePage(QWidget):
 
     def _on_info_ready(self, message: str) -> None:
         self._set_status(message)
+
+    def _connect_signals(self) -> None:
+        """Подключает сигналы SerialManager к UI."""
+        self._serial_manager.connection_changed.connect(self._update_connection_status)
+        self._serial_manager.device_identified.connect(self._update_device_info)
+
+    def _refresh_ports(self) -> None:
+        """Обновляет список доступных COM-портов."""
+        current = self._interface_combo.currentText()
+        self._interface_combo.clear()
+        self._interface_combo.addItem(tr("FAKE (эмулятор)"))
+        for port_info in comports():
+            self._interface_combo.addItem(port_info.device)
+        if current:
+            index = self._interface_combo.findText(current)
+            if index >= 0:
+                self._interface_combo.setCurrentIndex(index)
+            else:
+                self._interface_combo.setCurrentIndex(0)
+
+    def _on_connect_clicked(self) -> None:
+        """Подключается или отключается от выбранного COM-порта."""
+        if self._serial_manager.is_open():
+            self._serial_manager.close_port()
+            return
+        port_text = self._interface_combo.currentText()
+        port_name = "FAKE" if port_text.startswith("FAKE") else port_text
+        if not port_name:
+            QMessageBox.warning(self, tr("Внимание"), tr("Выберите COM-порт"))
+            return
+        baudrate = int(self._config.get("baudrate", 115200))
+        emulation = port_name == "FAKE"
+        if self._serial_manager.open_port(port_name, baudrate, emulation):
+            self._set_status(tr("Подключено к {0}").format(port_name), error=False)
+        else:
+            self._set_status(tr("Не удалось подключиться к {0}").format(port_name), error=True)
+            QMessageBox.critical(
+                self,
+                tr("Ошибка"),
+                tr("Не удалось подключиться к {0}").format(port_name),
+            )
+
+    def _update_connection_status(self) -> None:
+        """Обновляет статус подключения и кнопку."""
+        if self._serial_manager.is_open():
+            port_name = self._serial_manager.current_port_name() or "-"
+            self._connect_button.setText(tr("Отключиться"))
+            self._connection_status.setText(tr("Подключено к {0}").format(port_name))
+            self._connection_status.setStyleSheet("color: #4CAF50;")
+        else:
+            self._connect_button.setText(tr("Подключиться"))
+            self._connection_status.setText(tr("Не подключено"))
+            self._connection_status.setStyleSheet("color: #F44336;")
+
+    def _update_device_info(self, device_type: int = 0, device_version: int = 0) -> None:
+        """Обновляет информацию об устройстве."""
+        _ = device_version
+        device_type = self._config.get("device_type", device_type)
+        serial_number = self._config.get("serial_number", "")
+        if device_type == DEVICE_TYPE_ANALOG:
+            type_text = tr("Аналоговые порты")
+        else:
+            type_text = tr("CAN 2.0")
+        self._device_type_label.setText(tr("Тип устройства: {0}").format(type_text))
+        self._serial_number_label.setText(tr("Серийный номер: {0}").format(serial_number or "-"))
+
+    def retranslate_ui(self) -> None:
+        """Обновляет статические строки страницы прошивки."""
+        self._title.setText(tr("Прошивка STM32"))
+        self._interface_label.setText(tr("Интерфейс"))
+        self._refresh_ports_button.setToolTip(tr("Обновить список портов"))
+        self._update_connection_status()
+        self._update_device_info()
+        self._fw_group.setTitle(tr("ПО блока"))
+        self._car_group.setTitle(tr("Автомобиль"))
+        self._config_group.setTitle(tr("Конфигурация"))
+        self._populate_fw_list()
+        self._populate_car_list()
 
     def _on_worker_finished(self) -> None:
         self._set_buttons_enabled(True)

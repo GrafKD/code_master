@@ -184,8 +184,19 @@ class FilterDialog(QDialog):
         for te in to_edits:
             te.set_siblings(to_edits)
 
-        from_values = parse_data_bytes(str(rule.get("data_from", "")).split())
-        to_values = parse_data_bytes(str(rule.get("data_to", "")).split())
+        data_from_value = rule.get("data_from", "")
+        data_to_value = rule.get("data_to", "")
+        if isinstance(data_from_value, bytes):
+            data_from_value = " ".join(f"{b:02X}" for b in data_from_value)
+        else:
+            data_from_value = str(data_from_value)
+        if isinstance(data_to_value, bytes):
+            data_to_value = " ".join(f"{b:02X}" for b in data_to_value)
+        else:
+            data_to_value = str(data_to_value)
+
+        from_values = parse_data_bytes(data_from_value.split())
+        to_values = parse_data_bytes(data_to_value.split())
         for i, edit in enumerate(from_edits):
             edit.setText(f"{from_values[i]:02X}" if i < len(from_values) else "")
         for i, edit in enumerate(to_edits):
@@ -223,11 +234,16 @@ class FilterDialog(QDialog):
             return
         current_ids = set(self._get_ids_callback())
         existing: Dict[int, QListWidgetItem] = {}
-        for i in range(self._accepted_list.count()):
+        i = 0
+        while i < self._accepted_list.count():
             item = self._accepted_list.item(i)
+            if item is None:
+                i += 1
+                continue
             can_id = item.data(Qt.ItemDataRole.UserRole)
             if can_id in current_ids:
                 existing[can_id] = item
+                i += 1
             else:
                 self._accepted_list.takeItem(i)
         for can_id in sorted(current_ids):
