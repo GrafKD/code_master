@@ -45,6 +45,7 @@ from ui.filter_dialog import FilterDialog
 from ui.hex_edit import HexDataEdit, create_data_field_widget
 from ui.id_edit import IdPasteEdit
 from ui.memory_indicator import MemoryIndicator
+from ui.packet_clipboard import create_clipboard_buttons
 from ui.ui_utils import setup_button
 
 logger = get_logger(__name__)
@@ -271,8 +272,10 @@ class CanChannelMonitor(QWidget):
         self._table.setColumnWidth(3, 90)
         self._table.setColumnWidth(4, 80)
         self._table.setColumnWidth(5, 90)
-        self._table.setColumnWidth(6, 150)
-        self._table.setMinimumHeight(300)
+        self._table.setColumnWidth(6, 180)
+        self._table.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeMode.Stretch)
+        self._table.setMinimumHeight(200)
+        self._table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         self._send_bit_combo = QComboBox()
         self._send_bit_combo.setFont(font)
@@ -294,6 +297,10 @@ class CanChannelMonitor(QWidget):
         self._send_dlc_spin.setFixedWidth(45)
 
         self._send_data_edits, self._send_data_widget = create_data_field_widget(font, 8, edit_width=38)
+
+        self._send_copy_paste = create_clipboard_buttons(
+            self, self._send_id_edit, self._send_dlc_spin, self._send_data_edits, self._send_bit_combo
+        )
 
         self._send_period_spin = QSpinBox()
         self._send_period_spin.setRange(0, 9999)
@@ -352,12 +359,13 @@ class CanChannelMonitor(QWidget):
         send_top.setSpacing(4)
         send_top.addWidget(QLabel(tr("Бит")))
         send_top.addWidget(self._send_bit_combo)
-        send_top.addWidget(QLabel("ID"))
+        send_top.addWidget(QLabel(tr("ID")))
         send_top.addWidget(self._send_id_edit)
-        send_top.addWidget(QLabel("DLC"))
+        send_top.addWidget(QLabel(tr("DLC")))
         send_top.addWidget(self._send_dlc_spin)
         send_top.addWidget(QLabel(tr("Data")))
         send_top.addWidget(self._send_data_widget)
+        send_top.addWidget(self._send_copy_paste)
         send_top.addStretch()
         self._send_top_layout = send_top
 
@@ -800,6 +808,7 @@ class CanMonitorTab(QWidget):
         self._can_speed_combo.lineEdit().setPlaceholderText(tr("кбит/с"))
 
         self._splitter = QSplitter(Qt.Orientation.Horizontal)
+        self._splitter.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self._monitor1 = CanChannelMonitor(1, self._serial_manager, self)
         self._monitor2 = CanChannelMonitor(2, self._serial_manager, self)
         self._monitor1.create_trigger_requested.connect(self.create_trigger_requested)
@@ -807,6 +816,8 @@ class CanMonitorTab(QWidget):
         self._splitter.addWidget(self._monitor1)
         self._splitter.addWidget(self._monitor2)
         self._splitter.setSizes([450, 450])
+        self._splitter.setStretchFactor(0, 1)
+        self._splitter.setStretchFactor(1, 1)
 
         self._can_speed_combo.setCurrentText(str(self._config.get("can1_speed", 500000) // 1000))
         self._can_speed_combo.currentIndexChanged.connect(self._on_can_speed_changed)

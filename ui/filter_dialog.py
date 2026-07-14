@@ -147,7 +147,8 @@ class FilterDialog(QDialog):
         id_from.setMaxLength(8)
         id_from.setPlaceholderText(tr("ID от"))
         id_from.setValidator(QRegularExpressionValidator(QRegularExpression("[0-9A-Fa-f]{0,8}"), id_from))
-        id_from.setText(int_to_hex(rule.get("id_from", 0), 8) if rule.get("id_from") is not None else "")
+        id_from_value = rule.get("id_from")
+        id_from.setText(int_to_hex(id_from_value, 8) if isinstance(id_from_value, int) else "")
 
         id_to = QLineEdit()
         id_to.setFixedWidth(90)
@@ -155,7 +156,8 @@ class FilterDialog(QDialog):
         id_to.setMaxLength(8)
         id_to.setPlaceholderText(tr("ID до"))
         id_to.setValidator(QRegularExpressionValidator(QRegularExpression("[0-9A-Fa-f]{0,8}"), id_to))
-        id_to.setText(int_to_hex(rule.get("id_to", 0), 8) if rule.get("id_to") is not None else "")
+        id_to_value = rule.get("id_to")
+        id_to.setText(int_to_hex(id_to_value, 8) if isinstance(id_to_value, int) else "")
 
         top.addWidget(show_radio)
         top.addWidget(hide_radio)

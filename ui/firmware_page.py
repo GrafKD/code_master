@@ -30,6 +30,11 @@ from models.logger import get_logger
 from models.translations import _ as tr
 from ui.ui_utils import setup_button
 
+# Новые типы устройств для выбора в окне прошивки
+FIRMWARE_DEVICE_TYPE_2_CAN = 0
+FIRMWARE_DEVICE_TYPE_2_CAN_FD = 1
+FIRMWARE_DEVICE_TYPE_2_CAN_PLUS = 2
+
 try:
     from serial.tools.list_ports import comports
 except Exception:  # noqa: BLE001
@@ -168,8 +173,16 @@ class FirmwarePage(QWidget):
         self._connection_status.setFont(font)
         self._connection_status.setStyleSheet("color: #F44336;")
 
-        self._device_type_label = QLabel(tr("Тип устройства: -"))
+        self._device_type_label = QLabel(tr("Устройство"))
         self._device_type_label.setFont(font)
+        self._device_type_combo = QComboBox()
+        self._device_type_combo.setFont(font)
+        self._device_type_combo.setMinimumWidth(140)
+        self._device_type_combo.addItem(tr("2 CAN"), FIRMWARE_DEVICE_TYPE_2_CAN)
+        self._device_type_combo.addItem(tr("2 CAN FD"), FIRMWARE_DEVICE_TYPE_2_CAN_FD)
+        self._device_type_combo.addItem(tr("2 CAN +"), FIRMWARE_DEVICE_TYPE_2_CAN_PLUS)
+        self._device_type_combo.currentIndexChanged.connect(self._on_device_type_changed)
+
         self._serial_number_label = QLabel(tr("Серийный номер: -"))
         self._serial_number_label.setFont(font)
 
@@ -236,6 +249,7 @@ class FirmwarePage(QWidget):
         connection_layout.addWidget(self._connection_status)
         connection_layout.addStretch()
         connection_layout.addWidget(self._device_type_label)
+        connection_layout.addWidget(self._device_type_combo)
         connection_layout.addWidget(self._serial_number_label)
         layout.addLayout(connection_layout)
 
@@ -485,18 +499,36 @@ class FirmwarePage(QWidget):
         _ = device_version
         device_type = self._config.get("device_type", device_type)
         serial_number = self._config.get("serial_number", "")
-        if device_type == DEVICE_TYPE_ANALOG:
-            type_text = tr("Аналоговые порты")
-        else:
-            type_text = tr("CAN 2.0")
-        self._device_type_label.setText(tr("Тип устройства: {0}").format(type_text))
+        # Синхронизируем выпадающий список без лишних сигналов
+        index = self._device_type_combo.findData(device_type)
+        if index < 0:
+            index = 0
+        self._device_type_combo.blockSignals(True)
+        self._device_type_combo.setCurrentIndex(index)
+        self._device_type_combo.blockSignals(False)
         self._serial_number_label.setText(tr("Серийный номер: {0}").format(serial_number or "-"))
+
+    def _on_device_type_changed(self, index: int) -> None:
+        """Сохраняет выбранный тип устройства в конфиг."""
+        device_type = self._device_type_combo.itemData(index)
+        if device_type is not None:
+            self._config.set("device_type", device_type)
 
     def retranslate_ui(self) -> None:
         """Обновляет статические строки страницы прошивки."""
         self._title.setText(tr("Прошивка STM32"))
         self._interface_label.setText(tr("Интерфейс"))
         self._refresh_ports_button.setToolTip(tr("Обновить список портов"))
+        self._device_type_label.setText(tr("Устройство"))
+        current_type = self._device_type_combo.currentData()
+        self._device_type_combo.clear()
+        self._device_type_combo.addItem(tr("2 CAN"), FIRMWARE_DEVICE_TYPE_2_CAN)
+        self._device_type_combo.addItem(tr("2 CAN FD"), FIRMWARE_DEVICE_TYPE_2_CAN_FD)
+        self._device_type_combo.addItem(tr("2 CAN +"), FIRMWARE_DEVICE_TYPE_2_CAN_PLUS)
+        if current_type is not None:
+            index = self._device_type_combo.findData(current_type)
+            if index >= 0:
+                self._device_type_combo.setCurrentIndex(index)
         self._update_connection_status()
         self._update_device_info()
         self._fw_group.setTitle(tr("ПО блока"))

@@ -1,6 +1,6 @@
 """Простая система локализации для приложения «Код Мастер»."""
 
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 
 class Translator:
@@ -555,6 +555,28 @@ class Translator:
         """Возвращает перевод строки или оригинал, если перевод отсутствует."""
         return self._strings.get(self._lang, {}).get(text, text)
 
+    def translate_for_lang(self, text: str, lang: str) -> str:
+        """Возвращает перевод строки на указанный язык."""
+        return self._strings.get(lang, {}).get(text, text)
+
+    def all_translations(self, text: str) -> List[str]:
+        """Возвращает все известные переводы строки."""
+        result: set = set()
+        for lang in self._strings:
+            translation = self._strings[lang].get(text)
+            if translation:
+                result.add(translation)
+            if lang == self._lang and text:
+                result.add(text)
+        # Обратный поиск для английских строк
+        if self._lang == "en":
+            for ru, en in self._strings.get("ru", {}).items():
+                if en == text:
+                    result.add(ru)
+        else:
+            result.add(text)
+        return list(result)
+
 
 _translator = Translator()
 
@@ -570,3 +592,16 @@ def get_language() -> str:
 def _(text: str) -> str:
     """Возвращает перевод строки на текущем языке."""
     return _translator.translate(text)
+
+
+def get_translation(text: str, lang: str) -> str:
+    """Возвращает перевод строки на указанный язык.
+
+    Если перевод не найден, возвращает исходную строку.
+    """
+    return _translator.translate_for_lang(text, lang)
+
+
+def get_all_translations(text: str) -> List[str]:
+    """Возвращает список переводов строки на все языки (без дубликатов)."""
+    return _translator.all_translations(text)

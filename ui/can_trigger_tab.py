@@ -33,6 +33,7 @@ from models.utils import hex_to_int, int_to_hex, parse_data_bytes
 from ui.hex_edit import HexDataEdit, create_data_field_widget
 from ui.id_edit import IdPasteEdit
 from ui.memory_indicator import MemoryIndicator
+from ui.packet_clipboard import create_clipboard_buttons
 
 logger = get_logger(__name__)
 
@@ -170,12 +171,16 @@ class CanTriggerTab(QWidget):
         layout.addWidget(bit)
         can_id = self._make_id_edit(font, bit)
         layout.addWidget(can_id)
-        layout.addWidget(QLabel("DLC"))
+        layout.addWidget(QLabel(tr("DLC")))
         dlc = self._make_dlc_spin(font)
         layout.addWidget(dlc)
-        layout.addWidget(QLabel("Data"))
+        layout.addWidget(QLabel(tr("Data")))
         data, data_widget = self._make_data_edits(font)
         layout.addWidget(data_widget)
+
+        copy_paste = create_clipboard_buttons(self, can_id, dlc, data, bit)
+        layout.addWidget(copy_paste)
+
         layout.addStretch()
 
         dlc.valueChanged.connect(lambda value: self._set_data_enabled(data, value))
@@ -189,6 +194,7 @@ class CanTriggerTab(QWidget):
             "dlc": dlc,
             "data": data,
             "data_widget": data_widget,
+            "copy_paste": copy_paste,
         }
         can_id.set_fill_callback(lambda parsed, r=row: self._fill_row_from_packet(r, parsed))
         return row
@@ -256,11 +262,15 @@ class CanTriggerTab(QWidget):
         row_layout.addWidget(channel)
         row_layout.addWidget(QLabel(tr("Бит")))
         row_layout.addWidget(bit)
-        row_layout.addWidget(QLabel("ID"))
+        row_layout.addWidget(QLabel(tr("ID")))
         row_layout.addWidget(can_id)
-        row_layout.addWidget(QLabel("DLC"))
+        row_layout.addWidget(QLabel(tr("DLC")))
         row_layout.addWidget(dlc)
         row_layout.addWidget(data_widget)
+
+        copy_paste = create_clipboard_buttons(self, can_id, dlc, data, bit)
+        row_layout.addWidget(copy_paste)
+
         row_layout.addStretch()
         row_layout.addWidget(QLabel(tr("Задержка")))
         row_layout.addWidget(delay)
@@ -284,6 +294,7 @@ class CanTriggerTab(QWidget):
             "dlc": dlc,
             "data": data,
             "data_widget": data_widget,
+            "copy_paste": copy_paste,
             "delay": delay,
             "count": count,
             "next_delay": next_delay,
@@ -384,10 +395,10 @@ class CanTriggerTab(QWidget):
         row1.addWidget(QLabel(tr("Бит")))
         bit = self._make_bit_combo(font)
         row1.addWidget(bit)
-        row1.addWidget(QLabel("ID"))
+        row1.addWidget(QLabel(tr("ID")))
         can_id = self._make_id_edit(font, bit)
         row1.addWidget(can_id)
-        row1.addWidget(QLabel("DLC"))
+        row1.addWidget(QLabel(tr("DLC")))
         dlc = self._make_dlc_spin(font)
         row1.addWidget(dlc)
         row1.addWidget(QLabel(tr("Задержка мс")))
@@ -405,10 +416,14 @@ class CanTriggerTab(QWidget):
         row2.addWidget(QLabel(tr("От")))
         from_data, from_data_widget = self._make_data_edits(font)
         row2.addWidget(from_data_widget)
+        from_copy_paste = create_clipboard_buttons(self, can_id, dlc, from_data, bit)
+        row2.addWidget(from_copy_paste)
         row2.addSpacing(8)
         row2.addWidget(QLabel(tr("До")))
         to_data, to_data_widget = self._make_data_edits(font)
         row2.addWidget(to_data_widget)
+        to_copy_paste = create_clipboard_buttons(self, can_id, dlc, to_data, bit)
+        row2.addWidget(to_copy_paste)
         row2.addStretch()
 
         dlc.valueChanged.connect(lambda value: self._set_data_enabled(from_data, value))
@@ -431,8 +446,10 @@ class CanTriggerTab(QWidget):
             "dlc": dlc,
             "from_data": from_data,
             "from_data_widget": from_data_widget,
+            "from_copy_paste": from_copy_paste,
             "to_data": to_data,
             "to_data_widget": to_data_widget,
+            "to_copy_paste": to_copy_paste,
             "delay": delay,
             "count": count,
         }

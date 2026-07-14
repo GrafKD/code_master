@@ -123,7 +123,7 @@ class _LogicRow(QWidget):
         can_layout.addWidget(QLabel(tr("ID")))
         can_layout.addWidget(self._bit_combo)
         can_layout.addWidget(self._id_edit)
-        can_layout.addWidget(QLabel("DLC"))
+        can_layout.addWidget(QLabel(tr("DLC")))
         can_layout.addWidget(self._dlc_spin)
         can_layout.addWidget(QLabel(tr("Data")))
         can_layout.addWidget(self._data_widget)

@@ -28,6 +28,7 @@ from models.logger import get_logger
 from models.translations import _ as tr
 from models.utils import get_library_root, hex_to_int, int_to_hex
 from ui.can_trigger_tab import CanTriggerTab
+from ui.packet_clipboard import create_clipboard_buttons
 from ui.ui_utils import setup_button
 
 logger = get_logger(__name__)
@@ -98,6 +99,8 @@ class _AddMessageDialog(QDialog):
         self._data.setFont(font)
         self._data.setPlaceholderText("00 00 00 00 00 00 00 00")
 
+        self._copy_paste = create_clipboard_buttons(self, self._id, self._dlc, [], data_edit=self._data)
+
         layout.addWidget(QLabel(tr("Марка")))
         layout.addWidget(self._make)
         layout.addWidget(QLabel(tr("Модель")))
@@ -113,7 +116,11 @@ class _AddMessageDialog(QDialog):
         layout.addWidget(QLabel(tr("DLC")))
         layout.addWidget(self._dlc)
         layout.addWidget(QLabel(tr("Данные (пример)")))
-        layout.addWidget(self._data)
+        data_row = QHBoxLayout()
+        data_row.setSpacing(4)
+        data_row.addWidget(self._data, 1)
+        data_row.addWidget(self._copy_paste)
+        layout.addLayout(data_row)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept)

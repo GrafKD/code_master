@@ -28,6 +28,7 @@ from models.config import Config
 from models.logger import get_logger
 from models.translations import _ as tr
 from models.utils import hex_to_int, int_to_hex, parse_data_bytes
+from ui.packet_clipboard import create_clipboard_buttons
 from ui.ui_utils import setup_button
 from ui.memory_indicator import MemoryIndicator
 
@@ -163,6 +164,8 @@ class CanGatewayTab(QWidget):
         recv_layout.addWidget(recv_id)
         for edit in recv_data:
             recv_layout.addWidget(edit)
+        recv_copy_paste = create_clipboard_buttons(self, recv_id, None, recv_data)
+        recv_layout.addWidget(recv_copy_paste)
         recv_layout.addStretch()
 
         replace_layout = QHBoxLayout()
@@ -171,6 +174,8 @@ class CanGatewayTab(QWidget):
         replace_layout.addWidget(replace_id)
         for edit in replace_data:
             replace_layout.addWidget(edit)
+        replace_copy_paste = create_clipboard_buttons(self, replace_id, None, replace_data)
+        replace_layout.addWidget(replace_copy_paste)
         replace_layout.addStretch()
 
         options_layout = QHBoxLayout()
@@ -188,8 +193,10 @@ class CanGatewayTab(QWidget):
             "active": active,
             "recv_id": recv_id,
             "recv_data": recv_data,
+            "recv_copy_paste": recv_copy_paste,
             "replace_id": replace_id,
             "replace_data": replace_data,
+            "replace_copy_paste": replace_copy_paste,
             "direction": direction,
         }
 
